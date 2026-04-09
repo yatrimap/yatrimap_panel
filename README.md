@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is the YatriMap admin booking panel built with Next.js.
 
-## Getting Started
+## What is included
 
-First, run the development server:
+- Unified booking dashboard for rentals, hotels, activities, and packages
+- Monthly booking calendar with color markers by booking type
+- Daily booking cards with notes, approval actions, and agent indicators
+- Agents listing page and individual agent detail workspace
+- Local API proxy routes that can call the backend or fall back to realistic mock data
+
+## Environment
+
+If you want the panel to use the real backend, set these environment variables:
+
+```bash
+API_BASE_URL=http://localhost:5000
+ADMIN_API_TOKEN=your_admin_bearer_token
+```
+
+Without them, the UI still works in demo mode using mock data.
+
+## Getting started
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Backend endpoints expected
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The frontend proxies to:
 
-## Learn More
+- `GET /api/admin/insights/bookings`
+- `PATCH /api/admin/insights/bookings/:type/:bookingId/note`
+- `PATCH /api/admin/insights/bookings/:type/:bookingId/status`
+- `GET /api/admin/insights/agents`
+- `GET /api/admin/insights/agents/:agentId`
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+These backend routes were added in the companion API project.
