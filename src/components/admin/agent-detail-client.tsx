@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { buildBackendUrl } from "@/lib/api-url";
 import type { AgentDetails } from "@/lib/admin-types";
 
 const money = new Intl.NumberFormat("en-IN", {
@@ -14,7 +15,10 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
-    const response = await fetch(`/api/admin/agents/${agentId}`, { cache: "no-store" });
+    const response = await fetch(buildBackendUrl(`/admin/insights/agents/${agentId}`), {
+      cache: "no-store",
+      credentials: "include",
+    });
     const json = await response.json();
     if (!response.ok || !json.success) {
       setData(null);
@@ -27,8 +31,17 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     const loadAgent = async () => {
-      const response = await fetch(`/api/admin/agents/${agentId}`, { cache: "no-store" });
+      const response = await fetch(buildBackendUrl(`/admin/insights/agents/${agentId}`), {
+        cache: "no-store",
+        credentials: "include",
+      });
       const json = await response.json();
+      if (!response.ok || !json.success) {
+        setData(null);
+        setError(json.message || "Failed to fetch agent details");
+        return;
+      }
+      setError(null);
       setData(json.data);
     };
 
@@ -36,18 +49,20 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
   }, [agentId]);
 
   const updateCommission = async (commissionId: string, status: string) => {
-    await fetch(`/api/admin/commissions/${commissionId}/status`, {
+    await fetch(buildBackendUrl(`/admin/insights/commissions/${commissionId}/status`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ status }),
     });
     await load();
   };
 
   const updateWithdrawal = async (withdrawalId: string, status: string) => {
-    await fetch(`/api/admin/withdrawals/${withdrawalId}/status`, {
+    await fetch(buildBackendUrl(`/admin/insights/withdrawals/${withdrawalId}/status`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({
         status,
         transactionId: status === "PAID" ? `MANUAL-PAYOUT-${withdrawalId}` : "",

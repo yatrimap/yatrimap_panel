@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { buildBackendUrl } from "@/lib/api-url";
 
 const bookingSections = ["rental", "hotel", "activity", "package"];
 
@@ -44,8 +45,9 @@ export function DashboardClient() {
     const load = async () => {
       setLoading(true);
       setError(null);
-      const response = await fetch(`/api/admin/bookings?month=${month}&date=${selectedDate}`, {
+      const response = await fetch(buildBackendUrl(`/admin/insights/bookings?month=${month}&date=${selectedDate}`), {
         cache: "no-store",
+        credentials: "include",
       });
       const json = await response.json();
       if (!ignore) {
@@ -68,9 +70,10 @@ export function DashboardClient() {
 
   const saveNote = async (booking) => {
     const note = draftNotes[booking.id] ?? booking.notes;
-    await fetch(`/api/admin/bookings/${booking.type}/${booking.rawId}/note`, {
+    await fetch(buildBackendUrl(`/admin/insights/bookings/${booking.type}/${booking.rawId}/note`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ note, source: booking.source }),
     });
 
@@ -100,9 +103,10 @@ export function DashboardClient() {
 
   const approveBooking = async (booking) => {
     const status = statusForApproval(booking);
-    await fetch(`/api/admin/bookings/${booking.type}/${booking.rawId}/status`, {
+    await fetch(buildBackendUrl(`/admin/insights/bookings/${booking.type}/${booking.rawId}/status`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ status, source: booking.source }),
     });
 

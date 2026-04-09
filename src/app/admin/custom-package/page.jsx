@@ -4,6 +4,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Plus, Trash, Search, CheckCircle2 } from "lucide-react";
+import { buildBackendUrl, getApiV1BaseUrl } from "@/lib/api-url";
 
 export default function CustomPackageBuilder() {
     const [activeTab, setActiveTab] = useState("hotels");
@@ -32,7 +33,7 @@ export default function CustomPackageBuilder() {
     const [guestDetails, setGuestDetails] = useState({ name: "", email: "", phone: "", notes: "" });
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const apiV1BaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
+    const apiV1BaseUrl = getApiV1BaseUrl();
     const apiRootUrl = useMemo(() => apiV1BaseUrl.replace(/\/api\/v1\/?$/, ""), [apiV1BaseUrl]);
 
     useEffect(() => {
@@ -214,8 +215,7 @@ export default function CustomPackageBuilder() {
 
         try {
             setIsSubmitting(true);
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
-            const res = await axios.post(`${baseUrl}/admin/custom-packages/book`, payload, {
+            const res = await axios.post(buildBackendUrl("/api/v1/admin/custom-packages/book"), payload, {
                 withCredentials: true
             });
             if (res.data.success) {

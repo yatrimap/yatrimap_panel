@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { buildBackendUrl } from "@/lib/api-url";
 import type { AgentOperations, AgentOverview } from "@/lib/admin-types";
 
 const money = new Intl.NumberFormat("en-IN", {
@@ -16,7 +17,10 @@ export function AgentsClient() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetch(`/api/admin/agents`, { cache: "no-store" })
+    void fetch(buildBackendUrl("/admin/insights/agents"), {
+      cache: "no-store",
+      credentials: "include",
+    })
       .then((response) => response.json())
       .then((json) => {
         if (!json.success) {
@@ -26,7 +30,10 @@ export function AgentsClient() {
         setAgents(json.data);
       });
 
-    void fetch(`/api/admin/agent-operations`, { cache: "no-store" })
+    void fetch(buildBackendUrl("/admin/insights/agent-operations"), {
+      cache: "no-store",
+      credentials: "include",
+    })
       .then((response) => response.json())
       .then((json) => {
         if (!json.success) {
