@@ -3,15 +3,35 @@
 import React, { useMemo, useState, useEffect } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Plus, Trash, Search, CheckCircle2 } from "lucide-react";
+import { Plus, Trash, Search, CheckCircle2, ArrowRight } from "lucide-react";
 import { buildBackendUrl, getApiV1BaseUrl } from "@/lib/api-url";
+
+const getDeep = (obj, keys) => {
+    let cur = obj;
+    for (const key of keys) {
+        if (!cur || typeof cur !== "object" || !(key in cur)) return undefined;
+        cur = cur[key];
+    }
+    return cur;
+};
+
+const getNestedId = (value) => {
+    if (typeof value === "string") return value;
+    if (typeof value === "number") return String(value);
+    if (value && typeof value === "object" && "_id" in value) {
+        const inner = value._id;
+        if (typeof inner === "string") return inner;
+        if (typeof inner === "number") return String(inner);
+    }
+    return "";
+};
 
 export default function CustomPackageBuilder() {
     const [activeTab, setActiveTab] = useState("hotels");
     const [inventory, setInventory] = useState({ hotels: [], rentals: [], activities: [] });
     const [loadingByType, setLoadingByType] = useState({ hotels: true, rentals: true, activities: true });
     const [search, setSearch] = useState("");
-    const [selectedCity, setSelectedCity] = useState("all");
+    const [selectedCity, setSelectedCity] = useState("rishikesh");
     const [vehicleCategory, setVehicleCategory] = useState("all");
     const getDefaultDates = () => {
         const today = new Date();
@@ -32,6 +52,7 @@ export default function CustomPackageBuilder() {
     // Checkout Form State
     const [guestDetails, setGuestDetails] = useState({ name: "", email: "", phone: "", notes: "" });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [checkoutStep, setCheckoutStep] = useState(1);
 
     const apiV1BaseUrl = getApiV1BaseUrl();
     const apiRootUrl = useMemo(() => apiV1BaseUrl.replace(/\/api\/v1\/?$/, ""), [apiV1BaseUrl]);
@@ -62,13 +83,48 @@ export default function CustomPackageBuilder() {
                 return;
             }
 
-            const params = new URLSearchParams({
-                type,
-                ...(selectedCity !== "all" ? { city: selectedCity } : {}),
-                ...(type === "rentals" ? { vehicleCategory } : {}),
-            });
-            const res = await axios.get(`${apiV1BaseUrl}/admin/custom-packages/inventory?${params.toString()}`, { withCredentials: true });
-            if (res.data.success) setInventory(prev => ({ ...prev, [type]: res.data[type] || [] }));
+            if (type === "rentals") {
+                if (!globalDates.startDate || !globalDates.endDate) {
+                    setInventory(prev => ({ ...prev, [type]: [] }));
+                    return;
+                }
+                const params = new URLSearchParams({
+                    page: "1",
+                    limit: "50",
+                    startDate: globalDates.startDate,
+                    endDate: globalDates.endDate,
+                    ...(selectedCity !== "all" ? { location: selectedCity } : {}),
+                    ...(vehicleCategory !== "all" ? { category: vehicleCategory } : {}),
+                });
+                const res = await axios.get(`${apiRootUrl}/userapp/vehicle/list?${params.toString()}`, { withCredentials: true });
+                if (res.data.status === "SUCCESS") {
+                    const mappedRentals = (res.data.data || []).map(r => ({
+                        ...r.vehicle,
+                        availableQuantity: r.availableCount,
+                        quantity: r.vehicle?.quantity || r.availableCount,
+                        totalPrice: r.totalPrice,
+                        hub: r.hub,
+                        hubId: r.hub,
+                        pricing: { rentalPrice: r.price?.vehiclePricePerDay || r.priceBreakdown?.perDay || r.totalPrice || 0 }
+                    }));
+                    setInventory(prev => ({ ...prev, [type]: mappedRentals }));
+                }
+                return;
+            }
+
+            if (type === "activities") {
+                const params = new URLSearchParams({
+                    page: "1",
+                    limit: "50",
+                    ...(selectedCity !== "all" ? { city: selectedCity } : {}),
+                });
+                const res = await axios.get(`${apiRootUrl}/userapp/activity/all?${params.toString()}`, { withCredentials: true });
+                if (res.data.success) {
+                    setInventory(prev => ({ ...prev, [type]: res.data.data?.activities || [] }));
+                }
+                return;
+            }
+
         } catch (error) {
             console.error(`Error fetching ${type}:`, error);
         } finally {
@@ -76,24 +132,7 @@ export default function CustomPackageBuilder() {
         }
     };
 
-    const getDeep = (obj, keys) => {
-        let cur = obj;
-        for (const key of keys) {
-            if (!cur || typeof cur !== "object" || !(key in cur)) return undefined;
-            cur = cur[key];
-        }
-        return cur;
-    };
-    const getNestedId = (value) => {
-        if (typeof value === "string") return value;
-        if (typeof value === "number") return String(value);
-        if (value && typeof value === "object" && "_id" in value) {
-            const inner = value._id;
-            if (typeof inner === "string") return inner;
-            if (typeof inner === "number") return String(inner);
-        }
-        return "";
-    };
+
 
     const getCartKey = (itemType, item, specifics) => {
         const i = item || {};
@@ -201,11 +240,11 @@ export default function CustomPackageBuilder() {
                 quantity: item.quantity,
                 adults: item.adults || 1,
                 children: item.children || 0,
-                hotelId: item.itemType === "Hotel" ? item.coreItem._id : undefined,
-                roomId: item.itemType === "Hotel" ? item.roomId : undefined,
-                hubId: item.itemType === "Rental" ? item.coreItem.hubId?._id : undefined,
-                vehicleModelId: item.itemType === "Rental" ? item.coreItem.vehicleModelId?._id : undefined,
-                activityId: item.itemType === "Activity" ? item.coreItem._id : undefined,
+                hotelId: item.itemType === "Hotel" ? getNestedId(item.coreItem._id) : undefined,
+                roomId: item.itemType === "Hotel" ? getNestedId(item.roomId) : undefined,
+                hubId: item.itemType === "Rental" ? getNestedId(item.coreItem.hubId) : undefined,
+                vehicleModelId: item.itemType === "Rental" ? getNestedId(item.coreItem.vehicleModelId) : undefined,
+                activityId: item.itemType === "Activity" ? getNestedId(item.coreItem._id) : undefined,
                 checkIn: item.checkIn || undefined,
                 checkOut: item.checkOut || undefined,
                 activityDate: item.activityDate || undefined
@@ -346,100 +385,133 @@ export default function CustomPackageBuilder() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto bg-slate-50 p-6 space-y-4">
-                    {cart.length === 0 ? (
-                        <div className="text-center text-slate-400 mt-10 text-sm">Cart is empty. Select items to bundle.</div>
-                    ) : (
-                        cart.map((cartItem) => (
-                            <div key={cartItem.id} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm relative group">
-                                <button onClick={() => removeFromCart(cartItem.id)} className="absolute top-3 right-3 text-red-400 hover:text-red-600 transition-colors">
-                                    <Trash className="w-4 h-4" />
-                                </button>
+                    {checkoutStep === 1 ? (
+                        cart.length === 0 ? (
+                            <div className="text-center text-slate-400 mt-10 text-sm">Cart is empty. Select items to bundle.</div>
+                        ) : (
+                            cart.map((cartItem) => (
+                                <div key={cartItem.id} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm relative group hover:border-slate-300 transition-colors">
+                                    <button onClick={() => removeFromCart(cartItem.id)} className="absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-colors">
+                                        <Trash className="w-4 h-4" />
+                                    </button>
 
-                                <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">{cartItem.itemType}</div>
-                                <div className="font-medium text-slate-900 mt-1 pr-6">{cartItem.name}</div>
+                                    <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-1">{cartItem.itemType}</div>
+                                    <div className="font-medium text-slate-900 pr-6">{cartItem.name}</div>
 
-                                <div className="mt-4 space-y-3">
-                                    {(cartItem.itemType === "Hotel" || cartItem.itemType === "Rental") && (
-                                        <div className="grid grid-cols-2 gap-2 text-sm">
-                                            <div>
-                                                <label className="text-xs text-slate-500 block mb-1">Check-in / Pick-up</label>
-                                                <input type="date" value={cartItem.checkIn} onChange={(e) => handleDateChange(cartItem.id, "checkIn", e.target.value)} className="w-full border border-slate-200 rounded px-2 py-1 outline-none" />
-                                            </div>
-                                            <div>
-                                                <label className="text-xs text-slate-500 block mb-1">Check-out / Drop-off</label>
-                                                <input type="date" value={cartItem.checkOut} onChange={(e) => handleDateChange(cartItem.id, "checkOut", e.target.value)} className="w-full border border-slate-200 rounded px-2 py-1 outline-none" />
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {cartItem.itemType === "Activity" && (
-                                        <div className="text-sm">
-                                            <label className="text-xs text-slate-500 block mb-1">Activity Date</label>
-                                            <input type="date" value={cartItem.activityDate} onChange={(e) => handleDateChange(cartItem.id, "activityDate", e.target.value)} className="w-full border border-slate-200 rounded px-2 py-1 outline-none" />
-                                        </div>
-                                    )}
-
-                                    {(cartItem.itemType === "Hotel" || cartItem.itemType === "Activity") && (
-                                        <div className="grid grid-cols-2 gap-2 text-sm mt-3 border-t border-slate-100 pt-3">
-                                            <div>
-                                                <label className="text-xs text-slate-500 block mb-1 font-medium text-slate-600">Adults</label>
-                                                <div className="flex items-center">
-                                                    <button onClick={() => handleDateChange(cartItem.id, "adults", Math.max(1, (cartItem.adults || 1) - 1))} className="bg-slate-100 px-2.5 py-1 rounded-l border border-slate-200 hover:bg-slate-200 transition-colors">-</button>
-                                                    <div className="w-10 text-center border-y border-slate-200 py-1 bg-white">{cartItem.adults || 1}</div>
-                                                    <button onClick={() => handleDateChange(cartItem.id, "adults", (cartItem.adults || 1) + 1)} className="bg-slate-100 px-2.5 py-1 rounded-r border border-slate-200 hover:bg-slate-200 transition-colors">+</button>
+                                    <div className="mt-4 space-y-3">
+                                        {(cartItem.itemType === "Hotel" || cartItem.itemType === "Rental") && (
+                                            <div className="grid grid-cols-2 gap-2 text-sm">
+                                                <div>
+                                                    <label className="text-xs text-slate-500 block mb-1">Check-in / Pick-up</label>
+                                                    <input type="date" value={cartItem.checkIn} onChange={(e) => handleDateChange(cartItem.id, "checkIn", e.target.value)} className="w-full border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-slate-400" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs text-slate-500 block mb-1">Check-out / Drop-off</label>
+                                                    <input type="date" value={cartItem.checkOut} onChange={(e) => handleDateChange(cartItem.id, "checkOut", e.target.value)} className="w-full border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-slate-400" />
                                                 </div>
                                             </div>
-                                            <div>
-                                                <label className="text-xs text-slate-500 block mb-1 font-medium text-slate-600">Children</label>
-                                                <div className="flex items-center">
-                                                    <button onClick={() => handleDateChange(cartItem.id, "children", Math.max(0, (cartItem.children || 0) - 1))} className="bg-slate-100 px-2.5 py-1 rounded-l border border-slate-200 hover:bg-slate-200 transition-colors">-</button>
-                                                    <div className="w-10 text-center border-y border-slate-200 py-1 bg-white">{cartItem.children || 0}</div>
-                                                    <button onClick={() => handleDateChange(cartItem.id, "children", (cartItem.children || 0) + 1)} className="bg-slate-100 px-2.5 py-1 rounded-r border border-slate-200 hover:bg-slate-200 transition-colors">+</button>
+                                        )}
+
+                                        {cartItem.itemType === "Activity" && (
+                                            <div className="text-sm">
+                                                <label className="text-xs text-slate-500 block mb-1">Activity Date</label>
+                                                <input type="date" value={cartItem.activityDate} onChange={(e) => handleDateChange(cartItem.id, "activityDate", e.target.value)} className="w-full border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-slate-400" />
+                                            </div>
+                                        )}
+
+                                        {(cartItem.itemType === "Hotel" || cartItem.itemType === "Activity") && (
+                                            <div className="grid grid-cols-2 gap-2 text-sm mt-3 border-t border-slate-100 pt-3">
+                                                <div>
+                                                    <label className="text-xs text-slate-500 block mb-1 font-medium text-slate-600">Adults</label>
+                                                    <div className="flex items-center">
+                                                        <button onClick={() => handleDateChange(cartItem.id, "adults", Math.max(1, (cartItem.adults || 1) - 1))} className="bg-slate-100 px-2.5 py-1 rounded-l border border-slate-200 hover:bg-slate-200 transition-colors">-</button>
+                                                        <div className="w-10 text-center border-y border-slate-200 py-1 bg-white">{cartItem.adults || 1}</div>
+                                                        <button onClick={() => handleDateChange(cartItem.id, "adults", (cartItem.adults || 1) + 1)} className="bg-slate-100 px-2.5 py-1 rounded-r border border-slate-200 hover:bg-slate-200 transition-colors">+</button>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs text-slate-500 block mb-1 font-medium text-slate-600">Children</label>
+                                                    <div className="flex items-center">
+                                                        <button onClick={() => handleDateChange(cartItem.id, "children", Math.max(0, (cartItem.children || 0) - 1))} className="bg-slate-100 px-2.5 py-1 rounded-l border border-slate-200 hover:bg-slate-200 transition-colors">-</button>
+                                                        <div className="w-10 text-center border-y border-slate-200 py-1 bg-white">{cartItem.children || 0}</div>
+                                                        <button onClick={() => handleDateChange(cartItem.id, "children", (cartItem.children || 0) + 1)} className="bg-slate-100 px-2.5 py-1 rounded-r border border-slate-200 hover:bg-slate-200 transition-colors">+</button>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
 
-                                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
-                                        <label className="text-sm text-slate-600 whitespace-nowrap">Price Override (₹):</label>
-                                        <input
-                                            type="number"
-                                            value={cartItem.price}
-                                            onChange={(e) => handlePriceChange(cartItem.id, e.target.value)}
-                                            className="w-full border-b border-slate-300 px-1 py-1 text-slate-900 font-semibold focus:outline-none focus:border-slate-900 text-right"
-                                        />
+                                        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+                                            <label className="text-sm text-slate-500 font-medium whitespace-nowrap">Price Override (₹):</label>
+                                            <input
+                                                type="number"
+                                                value={cartItem.price}
+                                                onChange={(e) => handlePriceChange(cartItem.id, e.target.value)}
+                                                className="w-full border-b border-slate-300 px-1 py-1 text-slate-900 font-semibold focus:outline-none focus:border-slate-900 text-right bg-transparent transition-colors hover:bg-slate-50 rounded"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
+                            ))
+                        )
+                    ) : (
+                        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                            <h3 className="font-semibold text-slate-900 mb-4 text-lg">Guest Details</h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs text-slate-500 font-medium mb-1 block">Full Name</label>
+                                    <input type="text" placeholder="E.g. John Doe" value={guestDetails.name} onChange={e => setGuestDetails({ ...guestDetails, name: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-slate-400 focus:bg-white transition-colors" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs text-slate-500 font-medium mb-1 block">Email</label>
+                                        <input type="email" placeholder="john@example.com" value={guestDetails.email} onChange={e => setGuestDetails({ ...guestDetails, email: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-slate-400 focus:bg-white transition-colors" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-slate-500 font-medium mb-1 block">Phone</label>
+                                        <input type="text" placeholder="+91 9876543210" value={guestDetails.phone} onChange={e => setGuestDetails({ ...guestDetails, phone: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-slate-400 focus:bg-white transition-colors" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs text-slate-500 font-medium mb-1 block">Internal Notes</label>
+                                    <textarea placeholder="Any special requests or admin notes..." value={guestDetails.notes} onChange={e => setGuestDetails({ ...guestDetails, notes: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 min-h-[100px] outline-none focus:border-slate-400 focus:bg-white transition-colors resize-none" />
+                                </div>
                             </div>
-                        ))
+                        </div>
                     )}
                 </div>
 
                 {cart.length > 0 && (
-                    <div className="p-6 py-2 border-t border-slate-200 space-y-1">
-                        <div className="space-y-2 pt-1">
-                            <h3 className="font-semibold text-slate-900">Guest Details</h3>
-                            <input type="text" placeholder="Guest Name" value={guestDetails.name} onChange={e => setGuestDetails({ ...guestDetails, name: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-slate-400" />
-                            <div className="grid grid-cols-2 gap-3">
-                                <input type="email" placeholder="Email Address" value={guestDetails.email} onChange={e => setGuestDetails({ ...guestDetails, email: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-slate-400" />
-                                <input type="text" placeholder="Phone Number" value={guestDetails.phone} onChange={e => setGuestDetails({ ...guestDetails, phone: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-slate-400" />
+                    <div className="p-6 py-4 border-t border-slate-200 bg-white">
+                        <div className="flex items-center justify-between text-lg mb-4">
+                            <span className="font-medium text-slate-500 text-sm uppercase tracking-wider">Total Package Value</span>
+                            <span className="font-bold text-slate-900 text-2xl">₹{getTotalPrice()}</span>
+                        </div>
+
+                        {checkoutStep === 1 ? (
+                            <button
+                                onClick={() => setCheckoutStep(2)}
+                                className="w-full bg-slate-900 text-white rounded-xl py-3.5 font-semibold text-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                            >
+                                Next Step <ArrowRight className="w-4 h-4" />
+                            </button>
+                        ) : (
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setCheckoutStep(1)}
+                                    className="px-4 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-semibold text-sm hover:bg-slate-50 transition-colors"
+                                >
+                                    Back
+                                </button>
+                                <button
+                                    disabled={isSubmitting}
+                                    onClick={submitPackage}
+                                    className="flex-1 bg-slate-900 text-white rounded-xl py-3.5 font-semibold text-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    {isSubmitting ? "Generating..." : "Generate Booking"}
+                                    {!isSubmitting && <CheckCircle2 className="w-4 h-4" />}
+                                </button>
                             </div>
-                            <textarea placeholder="Admin Notes (Internal)..." value={guestDetails.notes} onChange={e => setGuestDetails({ ...guestDetails, notes: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 min-h-16 outline-none focus:border-slate-400" />
-                        </div>
-
-                        <div className="flex items-center justify-between text-lg pt-2">
-                            <span className="font-medium text-slate-600">Total Package Value</span>
-                            <span className="font-bold text-slate-900 text-xl">₹{getTotalPrice()}</span>
-                        </div>
-
-                        <button
-                            disabled={isSubmitting}
-                            onClick={submitPackage}
-                            className="w-full bg-slate-900 text-white rounded-xl py-3.5 font-semibold text-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
-                        >
-                            {isSubmitting ? "Generating..." : "Generate Custom Package booking"}
-                            {!isSubmitting && <CheckCircle2 className="w-4 h-4" />}
-                        </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -590,7 +662,7 @@ const InventoryCard = ({ item, type, onPlus, onMinus, getQty, city, globalDates,
 
     if (type === "rentals") {
         const title = `${item.vehicleCompanyName || item.vehicleModelId?.vehicleCompanyName || ""} ${item.vehicleModalName || item.vehicleModelId?.vehicleModalName || ""}`.trim() || "Unknown Vehicle";
-        const qty = getQty({ hubId: item.hubId?._id, vehicleModelId: item.vehicleModelId?._id });
+        const qty = getQty({ hubId: getNestedId(item.hubId), vehicleModelId: getNestedId(item.vehicleModelId) });
         return (
             <div className="bg-white border text-sm border-slate-200 rounded-2xl p-4 flex flex-col md:flex-row justify-between gap-4 md:items-center hover:border-slate-300 transition-colors shadow-sm">
                 <div>
@@ -606,36 +678,20 @@ const InventoryCard = ({ item, type, onPlus, onMinus, getQty, city, globalDates,
                     <span className="font-bold text-lg text-slate-900">₹{item.pricing?.rentalPrice || item.totalPrice || 0}/day</span>
                     <QtyButton
                         qty={qty}
-                        onPlus={async () => {
+                        onPlus={() => {
                             if (!globalDates.startDate || !globalDates.endDate) return toast.error("Select start/end dates first");
-                            // Check date-based availability using same endpoint as rental checkout.
-                            try {
-                                const vehicleId = item.vehicleId || item.vehicleModelId?._id || item._id;
-                                const res = await fetch(`${apiRootUrl}/userapp/vehicle/vehicleDetails/${vehicleId}?startDate=${globalDates.startDate}&endDate=${globalDates.endDate}`);
-                                if (!res.ok) throw new Error(await res.text());
-                                const json = await res.json();
-                                const availability = json?.data?.availability || [];
-                                const hubsInCity = (city && city !== "all")
-                                    ? availability.filter((h) => (h?.hub?.address?.city || "").toLowerCase().includes(city))
-                                    : availability;
-                                const hub = hubsInCity.find((h) => (h?.availableQuantity || 0) > 0 && h?.allowBooking !== false);
-                                if (!hub) return toast.error("Vehicle not available for selected dates");
+                            
+                            const available = typeof item.availableQuantity === "number" ? item.availableQuantity : item.quantity;
+                            if (qty >= available) return toast.error("Max quantity reached or not available");
 
-                                const already = getQty({ hubId: hub.hub?._id, vehicleModelId: item.vehicleModelId?._id });
-                                if (already >= (hub.availableQuantity || 0)) return toast.error("Max quantity reached or not available");
-
-                                onPlus({
-                                    hubId: hub.hub?._id,
-                                    vehicleModelId: item.vehicleModelId?._id,
-                                    price: hub.totalPrice ? hub.totalPrice : (item.pricing?.rentalPrice || item.totalPrice || 0),
-                                    name: `${title} (${hub.hub?.name})`,
-                                });
-                            } catch (e) {
-                                console.error(e);
-                                toast.error("Failed to check availability");
-                            }
+                            onPlus({
+                                hubId: getNestedId(item.hubId),
+                                vehicleModelId: getNestedId(item.vehicleModelId),
+                                price: item.pricing?.rentalPrice || item.totalPrice || 0,
+                                name: `${title} (${item.hubId?.name || item.hub?.name})`,
+                            });
                         }}
-                        onMinus={() => onMinus({ hubId: item.hubId?._id, vehicleModelId: item.vehicleModelId?._id })}
+                        onMinus={() => onMinus({ hubId: getNestedId(item.hubId), vehicleModelId: getNestedId(item.vehicleModelId) })}
                         disabledPlus={false}
                         disabledMinus={false}
                     />
