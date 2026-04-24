@@ -100,6 +100,7 @@ export default function CustomPackageBuilder() {
                 if (res.data.status === "SUCCESS") {
                     const mappedRentals = (res.data.data || []).map(r => ({
                         ...r.vehicle,
+                        vehicleModelId: r.vehicle?._id,
                         availableQuantity: r.availableCount,
                         quantity: r.vehicle?.quantity || r.availableCount,
                         totalPrice: r.totalPrice,
@@ -141,7 +142,7 @@ export default function CustomPackageBuilder() {
         if (itemType === "Hotel") return `Hotel:${itemId}:${getNestedId(s.roomId)}`;
         if (itemType === "Rental") {
             const hubId = getNestedId(s.hubId) || getNestedId(i.hubId) || getNestedId(i.hub?._id);
-            const vehicleModelId = getNestedId(s.vehicleModelId) || getNestedId(i.vehicleModelId);
+            const vehicleModelId = getNestedId(s.vehicleModelId) || getNestedId(i.vehicleModelId) || getNestedId(i._id);
             return `Rental:${hubId}:${vehicleModelId}`;
         }
         return `Activity:${itemId}:${getNestedId(s.variationId) || 'base'}`;
@@ -242,8 +243,8 @@ export default function CustomPackageBuilder() {
                 children: item.children || 0,
                 hotelId: item.itemType === "Hotel" ? getNestedId(item.coreItem._id) : undefined,
                 roomId: item.itemType === "Hotel" ? getNestedId(item.roomId) : undefined,
-                hubId: item.itemType === "Rental" ? getNestedId(item.coreItem.hubId) : undefined,
-                vehicleModelId: item.itemType === "Rental" ? getNestedId(item.coreItem.vehicleModelId) : undefined,
+                hubId: item.itemType === "Rental" ? getNestedId(item.coreItem.hubId) || getNestedId(item.coreItem.hub?._id) : undefined,
+                vehicleModelId: item.itemType === "Rental" ? getNestedId(item.coreItem.vehicleModelId) || getNestedId(item.coreItem._id) : undefined,
                 activityId: item.itemType === "Activity" ? getNestedId(item.coreItem._id) : undefined,
                 checkIn: item.checkIn || undefined,
                 checkOut: item.checkOut || undefined,
@@ -254,7 +255,7 @@ export default function CustomPackageBuilder() {
 
         try {
             setIsSubmitting(true);
-            const res = await axios.post(buildBackendUrl("/api/v1/admin/custom-packages/book"), payload, {
+            const res = await axios.post(buildBackendUrl("/admin/custom-packages/book"), payload, {
                 withCredentials: true
             });
             if (res.data.success) {
@@ -680,18 +681,18 @@ const InventoryCard = ({ item, type, onPlus, onMinus, getQty, city, globalDates,
                         qty={qty}
                         onPlus={() => {
                             if (!globalDates.startDate || !globalDates.endDate) return toast.error("Select start/end dates first");
-                            
+
                             const available = typeof item.availableQuantity === "number" ? item.availableQuantity : item.quantity;
                             if (qty >= available) return toast.error("Max quantity reached or not available");
 
                             onPlus({
-                                hubId: getNestedId(item.hubId),
-                                vehicleModelId: getNestedId(item.vehicleModelId),
+                                hubId: getNestedId(item.hubId) || getNestedId(item.hub?._id),
+                                vehicleModelId: getNestedId(item.vehicleModelId) || getNestedId(item._id),
                                 price: item.pricing?.rentalPrice || item.totalPrice || 0,
                                 name: `${title} (${item.hubId?.name || item.hub?.name})`,
                             });
                         }}
-                        onMinus={() => onMinus({ hubId: getNestedId(item.hubId), vehicleModelId: getNestedId(item.vehicleModelId) })}
+                        onMinus={() => onMinus({ hubId: getNestedId(item.hubId) || getNestedId(item.hub?._id), vehicleModelId: getNestedId(item.vehicleModelId) || getNestedId(item._id) })}
                         disabledPlus={false}
                         disabledMinus={false}
                     />
