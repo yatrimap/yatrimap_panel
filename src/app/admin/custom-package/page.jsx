@@ -265,7 +265,7 @@ export default function CustomPackageBuilder() {
             }
         } catch (error) {
             console.error(error);
-            toast.error("Failed to book package");
+            toast.error(error.response?.data?.message || "Failed to book package");
         } finally {
             setIsSubmitting(false);
         }
