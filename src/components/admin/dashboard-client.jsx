@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { buildBackendUrl } from "@/lib/api-url";
+import { User, Phone, Mail, MapPin, Building, Calendar, Clock, CreditCard, FileText, CheckCircle, ExternalLink, Briefcase, Car, Building2, Ticket, MessageSquare } from "lucide-react";
 
-const bookingSections = ["rental", "hotel", "activity", "package"];
+const bookingSections = ["hotel", "rental", "activity", "package", "custom-package"];
+
 
 const currency = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -28,9 +30,15 @@ const statusForApproval = (booking) => {
 
 export function DashboardClient() {
   const now = new Date();
-  const todayKey = now.toISOString().slice(0, 10);
-  const tomorrowKey = new Date(now.getTime() + 86400000).toISOString().slice(0, 10);
-  const [month, setMonth] = useState(now.toISOString().slice(0, 7));
+  const getLocalDateKey = (d) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+  const todayKey = getLocalDateKey(now);
+  const tomorrowKey = getLocalDateKey(new Date(now.getTime() + 86400000));
+  const [month, setMonth] = useState(todayKey.slice(0, 7));
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -38,6 +46,8 @@ export function DashboardClient() {
   const [draftNotes, setDraftNotes] = useState({});
   const [activeBooking, setActiveBooking] = useState(null);
   const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState("hotel");
+
 
   useEffect(() => {
     let ignore = false;
@@ -305,9 +315,11 @@ export function DashboardClient() {
             <div className="mt-4 grid gap-3">
               {bookingSections.map((section) => (
                 <div key={section} className="rounded-2xl bg-slate-50 px-4 py-3">
-                  <p className="text-sm capitalize text-slate-500">{section}</p>
+                  <p className="text-sm capitalize text-slate-500">
+                    {section === 'custom-package' ? 'Custom Package' : section}
+                  </p>
                   <p className="mt-1 text-2xl font-semibold text-slate-900">
-                    {data.selectedDate.sections[section].length}
+                    {data.selectedDate.sections[section]?.length || 0}
                   </p>
                 </div>
               ))}
@@ -316,42 +328,65 @@ export function DashboardClient() {
         </div>
       </section>
 
-      <section className="space-y-4">
-        {bookingSections.map((section) => (
-          <div key={section} className="rounded-[30px] border border-slate-200 bg-white p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Booking details</p>
-                <h3 className="mt-2 font-serif text-3xl capitalize">{section} bookings</h3>
-              </div>
-              <div className="rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-600">
-                {data.selectedDate.sections[section].length} items
-              </div>
-            </div>
+      <section className="space-y-6">
+        <div className="flex flex-wrap gap-3 border-b border-slate-200 pb-4">
+          {bookingSections.map((tab) => {
+            const label = tab === 'hotel' ? 'Stay (Hotel)' : tab === 'custom-package' ? 'Custom Package' : tab.charAt(0).toUpperCase() + tab.slice(1);
+            const count = data.selectedDate.sections[tab]?.length || 0;
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all ${
+                  activeTab === tab
+                    ? "bg-slate-900 text-white shadow-md"
+                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                }`}
+              >
+                {label} Bookings
+                <span className={`flex h-6 items-center justify-center rounded-full px-2 text-xs ${
+                  activeTab === tab ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+                }`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
 
-            <div className="mt-5 space-y-4">
-              {data.selectedDate.sections[section].length === 0 ? (
-                <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
-                  No {section} booking on this date.
-                </div>
-              ) : (
-                data.selectedDate.sections[section].map((booking) => (
-                  <ExpandableBookingCard
-                    key={booking.id}
-                    booking={booking}
-                    draftNote={draftNotes[booking.id] ?? booking.notes}
-                    onDraftNoteChange={(val) =>
-                      setDraftNotes((current) => ({ ...current, [booking.id]: val }))
-                    }
-                    onApprove={approveBooking}
-                    onSaveNote={saveNote}
-                    onGoToNote={setActiveBooking}
-                  />
-                ))
-              )}
+        <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Booking details</p>
+              <h3 className="mt-2 font-serif text-3xl capitalize">
+                {activeTab === 'hotel' ? 'Stay' : activeTab === 'custom-package' ? 'Custom Package' : activeTab} bookings
+              </h3>
             </div>
           </div>
-        ))}
+
+          <div className="mt-6 space-y-4">
+            {!data.selectedDate.sections[activeTab] || data.selectedDate.sections[activeTab].length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-slate-50 py-12 text-slate-500">
+                <FileText className="h-10 w-10 text-slate-300 mb-3" />
+                <p className="text-sm font-medium">No {activeTab === 'custom-package' ? 'custom package' : activeTab} bookings on this date.</p>
+                <p className="text-xs text-slate-400 mt-1">Try selecting a different date from the calendar.</p>
+              </div>
+            ) : (
+              data.selectedDate.sections[activeTab].map((booking) => (
+                <ExpandableBookingCard
+                  key={booking.id}
+                  booking={booking}
+                  draftNote={draftNotes[booking.id] ?? booking.notes}
+                  onDraftNoteChange={(val) =>
+                    setDraftNotes((current) => ({ ...current, [booking.id]: val }))
+                  }
+                  onApprove={approveBooking}
+                  onSaveNote={saveNote}
+                />
+              ))
+            )}
+          </div>
+        </div>
       </section>
 
       {activeBooking ? (
@@ -401,174 +436,256 @@ function ExpandableBookingCard({
   onDraftNoteChange,
   onApprove,
   onSaveNote,
-  onGoToNote,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
+  const handleGoToBooking = (e) => {
+    e.stopPropagation();
+    let url = "";
+    if (booking.type === 'activity') {
+      url = "https://hoteladmin.yatrimap.com/welcome/activitybooking";
+    } else if (booking.type === 'hotel') {
+      const propId = booking.propertyId || booking.hotelInfo?.id || booking.hotelInfo?._id || "unknown";
+      url = `https://hoteladmin.yatrimap.com/${propId}/admin/bookings/${booking.rawId}`;
+    } else if (booking.type === 'rental') {
+      const hubId = booking.hubId || booking.hubInfo?.id || booking.hubInfo?._id || "unknown";
+      url = `https://rentaladmin.yatrimap.com/${hubId}/hubadmin/bookings/${booking.rawId}`;
+    } else if (booking.type === 'custom-package') {
+      url = "/admin/custom-package";
+    }
+
+    if (url) {
+      window.open(url, "_blank");
+    }
+  };
+
+  const getIcon = () => {
+    if (booking.type === 'hotel') return <Building2 className="h-5 w-5" />;
+    if (booking.type === 'rental') return <Car className="h-5 w-5" />;
+    if (booking.type === 'activity') return <Ticket className="h-5 w-5" />;
+    if (booking.type === 'custom-package') return <Briefcase className="h-5 w-5" />;
+    return <FileText className="h-5 w-5" />;
+  };
+
   return (
     <article
-      className={`grid gap-5 rounded-[28px] border border-slate-200 bg-slate-50 p-5 transition-all ${
-        isExpanded ? "xl:grid-cols-[1.2fr_0.8fr_0.45fr]" : ""
+      className={`overflow-hidden rounded-[24px] border transition-all duration-300 ${
+        isExpanded ? "border-slate-300 bg-white shadow-xl" : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white"
       }`}
     >
-      <div className={isExpanded ? "" : ""}>
-        <div 
-          className={`flex flex-wrap items-center justify-between ${isExpanded ? "mb-6" : "cursor-pointer"}`} 
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
-          <div className="flex flex-wrap items-center gap-3">
-            <span
-              className="rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]"
-              style={{ backgroundColor: `${booking.color}22`, color: booking.color }}
-            >
-              {booking.label}
-            </span>
-            <span className="rounded-full bg-white px-3 py-1 text-xs text-slate-500">
-              {booking.status}
-            </span>
-            <span className="rounded-full bg-white px-3 py-1 text-xs text-slate-500">
-              {booking.bookingCode}
-            </span>
-            
-            {!isExpanded && (
-              <>
-                <span className="font-semibold text-slate-900">{booking.title}</span>
-                <span className="text-sm text-slate-500">
-                  {booking.customer.name} • {currency.format(booking.amount)}
-                </span>
-              </>
-            )}
-          </div>
-
-          <button
-            className="rounded-full border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-100"
-            title={isExpanded ? "Collapse details" : "Expand details"}
+      {/* Header - Always visible */}
+      <div 
+        className="flex cursor-pointer items-center justify-between p-5" 
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex flex-1 items-center gap-4">
+          <div 
+            className="flex h-12 w-12 items-center justify-center rounded-2xl"
+            style={{ backgroundColor: `${booking.color}15`, color: booking.color }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
+            {getIcon()}
+          </div>
+          
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h4 className="text-lg font-semibold text-slate-900">{booking.title}</h4>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                booking.status.toLowerCase() === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+              }`}>
+                {booking.status}
+              </span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                {booking.bookingCode}
+              </span>
+            </div>
+            
+            <div className="mt-1 flex items-center gap-3 text-sm text-slate-500">
+              <span className="flex items-center gap-1.5"><User className="h-3.5 w-3.5" /> {booking.customer?.name}</span>
+              <span className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5" /> {currency.format(booking.amount)}</span>
+              {booking.schedule?.time && <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {booking.schedule.time}</span>}
+            </div>
+          </div>
         </div>
 
-        {isExpanded && (
-          <>
-            <h4 className="text-2xl font-semibold text-slate-950">{booking.title}</h4>
-            <div className="mt-4 grid gap-3 text-sm text-slate-600 md:grid-cols-2">
-              <div className="rounded-2xl bg-white p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">User details</p>
-                <p className="mt-2 font-medium text-slate-900">{booking.customer.name}</p>
-                <p>{booking.customer.email}</p>
-                <p>{booking.customer.phone}</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleGoToBooking}
+            className="hidden items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 md:flex"
+          >
+            <ExternalLink className="h-4 w-4" /> Go to booking
+          </button>
+          
+          <div className={`flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-transform ${isExpanded ? 'rotate-180 bg-slate-100' : ''}`}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded Content */}
+      {isExpanded && (
+        <div className="border-t border-slate-100 bg-slate-50/50 p-6">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            
+            {/* Custom Package Component Items */}
+            {booking.type === 'custom-package' && booking.items && booking.items.length > 0 && (
+              <div className="md:col-span-2 lg:col-span-3 rounded-2xl border border-indigo-100 bg-indigo-50/30 p-5 shadow-sm">
+                <div className="flex items-center gap-2 mb-4 text-indigo-900 font-semibold">
+                  <Briefcase className="h-5 w-5 text-indigo-600" />
+                  <h5>Package Components ({booking.items.length})</h5>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {booking.items.map((item, index) => (
+                    <div key={index} className="rounded-xl border border-indigo-100 bg-white p-3.5 text-sm shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                            item.itemType === 'Hotel' ? 'bg-teal-100 text-teal-800' :
+                            item.itemType === 'Rental' ? 'bg-rose-100 text-rose-800' :
+                            'bg-blue-100 text-blue-800'
+                          }`}>
+                            {item.itemType}
+                          </span>
+                          <span className="font-semibold text-slate-900">{currency.format(item.price)}</span>
+                        </div>
+                        <p className="mt-2 font-medium text-slate-800 line-clamp-1">{item.name}</p>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                        <span>Qty: {item.quantity}</span>
+                        <span>
+                          {item.itemType === 'Activity' 
+                            ? formatDate(item.activityDate)
+                            : `${formatDate(item.checkIn)} - ${formatDate(item.checkOut)}`
+                          }
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="rounded-2xl bg-white p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Operational info</p>
-                <p className="mt-2 text-slate-900">{booking.secondaryInfo || "Booking scheduled"}</p>
-                <p className="mt-1">Value: {currency.format(booking.amount)}</p>
-                <p className="mt-1">Payment: {booking.paymentStatus}</p>
-                <p className="mt-1">Source: {booking.source || "backend"}</p>
+            )}
+
+            {/* User Details */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4 text-slate-800">
+                <User className="h-5 w-5 text-teal-600" />
+                <h5 className="font-semibold">Guest Information</h5>
+              </div>
+              <div className="space-y-3 text-sm text-slate-600">
+                <p className="flex items-center gap-3"><span className="font-medium text-slate-900 w-16">Name:</span> {booking.customer.name}</p>
+                <p className="flex items-center gap-3"><Mail className="h-4 w-4 text-slate-400" /> {booking.customer.email}</p>
+                <p className="flex items-center gap-3"><Phone className="h-4 w-4 text-slate-400" /> {booking.customer.phone}</p>
               </div>
             </div>
 
-            {booking.hasAgent && booking.agent ? (
-              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                <p className="font-medium">Agent booking indicator</p>
-                <p className="mt-1">
-                  {booking.agent.fullName} ({booking.agent.agentCode}) from {booking.agent.shopName}
-                </p>
-                <p className="mt-1">
-                  Commission: {currency.format(booking.commission?.commissionAmount || 0)} at{" "}
-                  {booking.commission?.commissionPercentage || 0}%
-                </p>
+            {/* Operational Info */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4 text-slate-800">
+                <Briefcase className="h-5 w-5 text-indigo-600" />
+                <h5 className="font-semibold">Operational Details</h5>
               </div>
-            ) : null}
+              <div className="space-y-3 text-sm text-slate-600">
+                <p className="flex items-center gap-3"><Calendar className="h-4 w-4 text-slate-400" /> <span className="font-medium text-slate-900 w-16">Date:</span> {formatDate(booking.bookingDate)}</p>
+                {booking.stay?.checkOut && <p className="flex items-center gap-3"><Calendar className="h-4 w-4 text-slate-400" /> <span className="font-medium text-slate-900 w-16">Out:</span> {formatDate(booking.stay.checkOut)}</p>}
+                <p className="flex items-center gap-3"><CreditCard className="h-4 w-4 text-slate-400" /> <span className="font-medium text-slate-900 w-16">Payment:</span> {booking.paymentStatus}</p>
+                <p className="flex items-center gap-3"><MapPin className="h-4 w-4 text-slate-400" /> <span className="font-medium text-slate-900 w-16">Source:</span> {booking.source || "backend"}</p>
+              </div>
+            </div>
 
-            {booking.hubInfo ? (
-              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-                <p className="font-medium text-xs uppercase tracking-[0.2em] mb-2 text-blue-700">Rental Hub Details</p>
-                <p className="font-semibold">{booking.hubInfo.name}</p>
-                {booking.hubInfo.managerName && <p>Manager: {booking.hubInfo.managerName}</p>}
-                {booking.hubInfo.contactNumber && <p>Contact: {booking.hubInfo.contactNumber}</p>}
-                {booking.hubInfo.address?.city && <p>Location: {booking.hubInfo.address.city}, {booking.hubInfo.address.state}</p>}
+            {/* Provider Details */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4 text-slate-800">
+                <Building className="h-5 w-5 text-rose-600" />
+                <h5 className="font-semibold">Provider Details</h5>
               </div>
-            ) : null}
-            
-            {booking.hotelInfo ? (
-              <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-50 p-4 text-sm text-teal-900">
-                <p className="font-medium text-xs uppercase tracking-[0.2em] mb-2 text-teal-700">Hotel Details</p>
-                <p className="font-semibold">{booking.hotelInfo.name || booking.title}</p>
-                {booking.hotelInfo.address && (
-                  <p>
-                    {typeof booking.hotelInfo.address === 'string' 
-                      ? booking.hotelInfo.address 
-                      : (booking.hotelInfo.address.fullAddress || `${booking.hotelInfo.address.city || ''} ${booking.hotelInfo.address.state || ''}`)}
-                  </p>
+              <div className="space-y-3 text-sm text-slate-600">
+                {booking.hotelInfo && (
+                  <>
+                    <p className="font-medium text-slate-900">{booking.hotelInfo.name || booking.title}</p>
+                    <p className="text-xs">{typeof booking.hotelInfo.address === 'string' ? booking.hotelInfo.address : (booking.hotelInfo.address?.fullAddress || `${booking.hotelInfo.address?.city || ''}`)}</p>
+                    {(booking.hotelInfo.contactPhone || (booking.hotelInfo.phone && booking.hotelInfo.phone[0])) && (
+                      <p className="flex items-center gap-2 mt-2"><Phone className="h-3.5 w-3.5 text-slate-400" /> {booking.hotelInfo.contactPhone || booking.hotelInfo.phone[0]}</p>
+                    )}
+                  </>
                 )}
-                {booking.hotelInfo.contactPhone && <p>Contact: {booking.hotelInfo.contactPhone}</p>}
-                {(booking.hotelInfo.phone && booking.hotelInfo.phone.length > 0) && <p>Contact: {booking.hotelInfo.phone[0]}</p>}
+                {booking.hubInfo && (
+                  <>
+                    <p className="font-medium text-slate-900">{booking.hubInfo.name}</p>
+                    {booking.hubInfo.managerName && <p className="text-xs">Manager: {booking.hubInfo.managerName}</p>}
+                    {booking.hubInfo.contactNumber && <p className="flex items-center gap-2 mt-2"><Phone className="h-3.5 w-3.5 text-slate-400" /> {booking.hubInfo.contactNumber}</p>}
+                  </>
+                )}
+                {booking.companyInfo && (
+                  <>
+                    <p className="font-medium text-slate-900">{booking.companyInfo.name || booking.companyInfo.legalName}</p>
+                    <p className="text-xs">{booking.companyInfo.location?.address || booking.companyInfo.address}</p>
+                    {(booking.companyInfo.contact?.phone || booking.companyInfo.phone) && (
+                      <p className="flex items-center gap-2 mt-2"><Phone className="h-3.5 w-3.5 text-slate-400" /> {booking.companyInfo.contact?.phone || booking.companyInfo.phone}</p>
+                    )}
+                  </>
+                )}
+                {!booking.hotelInfo && !booking.hubInfo && !booking.companyInfo && (
+                  <p className="text-slate-400 italic">No specific provider details available.</p>
+                )}
               </div>
-            ) : null}
-            
-            {booking.companyInfo ? (
-              <div className="mt-4 rounded-2xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-900">
-                <p className="font-medium text-xs uppercase tracking-[0.2em] mb-2 text-purple-700">Company Details / Provider Info</p>
-                <p className="font-semibold">{booking.companyInfo.name || booking.companyInfo.legalName}</p>
-                {booking.companyInfo.contact?.phone && <p>Contact: {booking.companyInfo.contact.phone}</p>}
-                {booking.companyInfo.phone && <p>Contact: {booking.companyInfo.phone}</p>}
-                {booking.companyInfo.location?.address && <p>Location: {booking.companyInfo.location.address}, {booking.companyInfo.location.city}</p>}
-                {booking.companyInfo.address && <p>Location: {booking.companyInfo.address}</p>}
-              </div>
-            ) : null}
+            </div>
 
-            <div className="mt-4">
-              <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Admin note</label>
+            {/* Agent Info (If applicable) */}
+            {booking.hasAgent && booking.agent && (
+              <div className="md:col-span-2 lg:col-span-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+                <div className="flex items-center gap-2 mb-3 text-amber-800">
+                  <User className="h-5 w-5" />
+                  <h5 className="font-semibold">Agent Booking Indicator</h5>
+                </div>
+                <div className="flex flex-wrap gap-6 text-sm text-amber-900">
+                  <p><span className="font-medium opacity-70">Agent:</span> {booking.agent.fullName} ({booking.agent.agentCode})</p>
+                  <p><span className="font-medium opacity-70">Shop:</span> {booking.agent.shopName}</p>
+                  <p><span className="font-medium opacity-70">Commission:</span> {currency.format(booking.commission?.commissionAmount || 0)} ({booking.commission?.commissionPercentage || 0}%)</p>
+                </div>
+              </div>
+            )}
+
+            {/* Admin Note Section */}
+            <div className="md:col-span-2 lg:col-span-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-3 text-slate-800">
+                <MessageSquare className="h-5 w-5 text-slate-400" />
+                <h5 className="font-semibold">Admin Note</h5>
+              </div>
               <textarea
                 value={draftNote}
                 onChange={(event) => onDraftNoteChange(event.target.value)}
-                className="mt-2 min-h-28 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none"
+                className="min-h-[100px] w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 transition-colors focus:border-teal-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
                 placeholder="Add internal note for admin operations..."
               />
             </div>
-          </>
-        )}
-      </div>
-
-      {isExpanded && (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <div className="rounded-2xl bg-white p-4 text-sm text-slate-600">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Date summary</p>
-              <p className="mt-2 text-slate-900">{formatDate(booking.bookingDate)}</p>
-              {booking.stay?.checkOut ? <p>Check out: {formatDate(booking.stay.checkOut)}</p> : null}
-              {booking.schedule?.time ? <p>Time: {booking.schedule.time}</p> : null}
-            </div>
-            <div className="rounded-2xl bg-white p-4 text-sm text-slate-600">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Business value</p>
-              <p className="mt-2 text-slate-900">{currency.format(booking.amount)}</p>
-              <p>{booking.hasAgent ? "Partner sourced" : "Direct platform booking"}</p>
-            </div>
           </div>
 
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={() => onApprove(booking)}
-              className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-medium text-white"
-            >
-              Approve booking
-            </button>
-            <button
-              onClick={() => onGoToNote(booking)}
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700"
-            >
-              Go to booking
-            </button>
+          {/* Action Bar */}
+          <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-6">
             <button
               onClick={() => onSaveNote(booking)}
-              className="rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-medium text-teal-900"
+              className="flex items-center gap-2 rounded-xl bg-white border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
             >
-              Save note
+              Save Note
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onApprove(booking);
+              }}
+              className="flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-teal-700"
+            >
+              <CheckCircle className="h-4 w-4" /> Approve Booking
+            </button>
+            <button
+              onClick={handleGoToBooking}
+              className="flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 md:hidden"
+            >
+              <ExternalLink className="h-4 w-4" /> Go to booking
             </button>
           </div>
-        </>
+        </div>
       )}
     </article>
   );

@@ -4,7 +4,7 @@ import { DashboardClient } from "@/components/admin/dashboard-client";
 export default function Home() {
   return (
     <AdminShell
-      title="Unified bookings dashboard"
+      title="Bookings dashboard"
       subtitle="Track rentals, hotels, activities, and packages in one smart operations view. Use the date tabs, monthly booking calendar, and detailed action cards to manage the day."
     >
       <DashboardClient />
