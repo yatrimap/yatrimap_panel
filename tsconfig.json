@@ -37,7 +37,7 @@
     "**/*.mts",
     "src/app/admin/custom-package/page.jsx",
     "src/components/admin/dashboard-client.jsx"
-  ],
+, "src/components/admin/coupons-client.jsx"  ],
   "exclude": [
     "node_modules"
   ]
