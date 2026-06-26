@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { buildBackendUrl } from "@/lib/api-url";
-import { User, Phone, Mail, MapPin, Building, Calendar, Clock, CreditCard, FileText, CheckCircle, ExternalLink, Briefcase, Car, Building2, Ticket, MessageSquare } from "lucide-react";
+import { User, Phone, Mail, MapPin, Building, Calendar, Clock, CreditCard, FileText, CheckCircle, ExternalLink, Briefcase, Car, Building2, Ticket, MessageSquare, Plus } from "lucide-react";
 
 const bookingSections = ["hotel", "rental", "activity", "package", "custom-package"];
 
@@ -46,7 +46,8 @@ export function DashboardClient() {
   const [draftNotes, setDraftNotes] = useState({});
   const [activeBooking, setActiveBooking] = useState(null);
   const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState("hotel");
+  const [activeTab, setActiveTab] = useState("all");
+  const [viewMode, setViewMode] = useState("booking-date"); // "booking-date" | "created-date"
 
 
   useEffect(() => {
@@ -156,8 +157,8 @@ export function DashboardClient() {
     { label: "Revenue in month", value: currency.format(data.metrics.totalRevenue) },
     { label: "Today pipeline", value: data.metrics.todayBookings.toString() },
     { label: "Tomorrow pipeline", value: data.metrics.tomorrowBookings.toString() },
+    { label: "Created today", value: (data.createdOnDate?.totalBookings || 0).toString() },
     { label: "Active agents", value: data.metrics.activeAgents.toString() },
-    { label: "Average booking", value: currency.format(data.metrics.averageBookingValue) },
   ];
 
   return (
@@ -329,17 +330,65 @@ export function DashboardClient() {
       </section>
 
       <section className="space-y-6">
+        {/* View Mode Toggle */}
+        <div className="flex items-center gap-3">
+          <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1">
+            <button
+              onClick={() => { setViewMode("booking-date"); setActiveTab("all"); }}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+                viewMode === "booking-date"
+                  ? "bg-slate-900 text-white shadow-md"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Calendar className="h-4 w-4" />
+              Booking Date
+            </button>
+            <button
+              onClick={() => { setViewMode("created-date"); setActiveTab("all"); }}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+                viewMode === "created-date"
+                  ? "bg-teal-700 text-white shadow-md"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Plus className="h-4 w-4" />
+              Created Date
+            </button>
+          </div>
+          <p className="text-xs text-slate-400">
+            {viewMode === "booking-date" 
+              ? "Showing bookings scheduled on selected date" 
+              : "Showing bookings created on selected date (regardless of booking date)"}
+          </p>
+        </div>
+
+        {/* Created Date Summary Bar */}
+        {viewMode === "created-date" && data.createdOnDate && (
+          <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-teal-200 bg-teal-50/50 px-5 py-3">
+            <div className="flex items-center gap-2 text-teal-800">
+              <Plus className="h-4 w-4" />
+              <span className="text-sm font-semibold">{data.createdOnDate.totalBookings} bookings created</span>
+            </div>
+            <span className="text-sm text-teal-600">Revenue: {currency.format(data.createdOnDate.totalRevenue)}</span>
+            <span className="text-xs text-teal-500">on {formatDate(data.createdOnDate.date)}</span>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-3 border-b border-slate-200 pb-4">
-          {bookingSections.map((tab) => {
-            const label = tab === 'hotel' ? 'Stay (Hotel)' : tab === 'custom-package' ? 'Custom Package' : tab.charAt(0).toUpperCase() + tab.slice(1);
-            const count = data.selectedDate.sections[tab]?.length || 0;
+          {["all", ...bookingSections].map((tab) => {
+            const label = tab === 'all' ? 'All' : tab === 'hotel' ? 'Stay (Hotel)' : tab === 'custom-package' ? 'Custom Package' : tab.charAt(0).toUpperCase() + tab.slice(1);
+            const activeSections = viewMode === "created-date" ? (data.createdOnDate?.sections || {}) : data.selectedDate.sections;
+            const count = tab === 'all' 
+              ? bookingSections.reduce((acc, curr) => acc + (activeSections[curr]?.length || 0), 0)
+              : activeSections[tab]?.length || 0;
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all ${
                   activeTab === tab
-                    ? "bg-slate-900 text-white shadow-md"
+                    ? viewMode === "created-date" ? "bg-teal-700 text-white shadow-md" : "bg-slate-900 text-white shadow-md"
                     : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:border-slate-300"
                 }`}
               >
@@ -354,25 +403,41 @@ export function DashboardClient() {
           })}
         </div>
 
-        <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+        <div className={`rounded-[30px] border bg-white p-6 shadow-sm ${viewMode === "created-date" ? "border-teal-200" : "border-slate-200"}`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Booking details</p>
+              <p className={`font-mono text-xs uppercase tracking-[0.3em] ${viewMode === "created-date" ? "text-teal-700" : "text-teal-700"}`}>
+                {viewMode === "created-date" ? "Created on this date" : "Booking details"}
+              </p>
               <h3 className="mt-2 font-serif text-3xl capitalize">
-                {activeTab === 'hotel' ? 'Stay' : activeTab === 'custom-package' ? 'Custom Package' : activeTab} bookings
+                {activeTab === 'all' ? 'All' : activeTab === 'hotel' ? 'Stay' : activeTab === 'custom-package' ? 'Custom Package' : activeTab} bookings
               </h3>
             </div>
           </div>
 
           <div className="mt-6 space-y-4">
-            {!data.selectedDate.sections[activeTab] || data.selectedDate.sections[activeTab].length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-slate-50 py-12 text-slate-500">
-                <FileText className="h-10 w-10 text-slate-300 mb-3" />
-                <p className="text-sm font-medium">No {activeTab === 'custom-package' ? 'custom package' : activeTab} bookings on this date.</p>
-                <p className="text-xs text-slate-400 mt-1">Try selecting a different date from the calendar.</p>
-              </div>
-            ) : (
-              data.selectedDate.sections[activeTab].map((booking) => (
+            {(() => {
+              const activeSections = viewMode === "created-date" ? (data.createdOnDate?.sections || {}) : data.selectedDate.sections;
+              const bookingsToShow = activeTab === 'all' 
+                ? bookingSections.flatMap(section => activeSections[section] || [])
+                : activeSections[activeTab] || [];
+
+              if (bookingsToShow.length === 0) {
+                return (
+                  <div className="flex flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-slate-50 py-12 text-slate-500">
+                    <FileText className="h-10 w-10 text-slate-300 mb-3" />
+                    <p className="text-sm font-medium">
+                      {viewMode === "created-date" 
+                        ? `No bookings were created on this date.`
+                        : `No ${activeTab === 'all' ? '' : activeTab === 'custom-package' ? 'custom package' : activeTab} bookings on this date.`
+                      }
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">Try selecting a different date from the calendar.</p>
+                  </div>
+                );
+              }
+
+              return bookingsToShow.map((booking) => (
                 <ExpandableBookingCard
                   key={booking.id}
                   booking={booking}
@@ -382,9 +447,10 @@ export function DashboardClient() {
                   }
                   onApprove={approveBooking}
                   onSaveNote={saveNote}
+                  showCreatedAt={viewMode === "created-date"}
                 />
-              ))
-            )}
+              ));
+            })()}
           </div>
         </div>
       </section>
@@ -436,6 +502,7 @@ function ExpandableBookingCard({
   onDraftNoteChange,
   onApprove,
   onSaveNote,
+  showCreatedAt = false,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -488,7 +555,9 @@ function ExpandableBookingCard({
           
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <h4 className="text-lg font-semibold text-slate-900">{booking.title}</h4>
+              <h4 className="text-lg font-semibold text-slate-900">
+                {booking.type === 'hotel' && booking.hotelInfo?.name ? booking.hotelInfo.name : booking.title}
+              </h4>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
                 booking.status.toLowerCase() === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
               }`}>
@@ -499,10 +568,20 @@ function ExpandableBookingCard({
               </span>
             </div>
             
-            <div className="mt-1 flex items-center gap-3 text-sm text-slate-500">
+            <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-slate-500">
               <span className="flex items-center gap-1.5"><User className="h-3.5 w-3.5" /> {booking.customer?.name}</span>
               <span className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5" /> {currency.format(booking.amount)}</span>
               {booking.schedule?.time && <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {booking.schedule.time}</span>}
+              {showCreatedAt && (
+                <>
+                  <span className="flex items-center gap-1.5 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">
+                    <Calendar className="h-3 w-3" /> Booking: {formatDate(booking.bookingDate)}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-600">
+                    {booking.type === 'custom-package' ? 'Custom Pkg' : booking.type}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
