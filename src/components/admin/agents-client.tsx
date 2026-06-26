@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { buildBackendUrl } from "@/lib/api-url";
 import type { AgentOperations, AgentOverview } from "@/lib/admin-types";
+import { Search } from "lucide-react";
 
 const money = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -15,6 +16,18 @@ export function AgentsClient() {
   const [agents, setAgents] = useState<AgentOverview[]>([]);
   const [operations, setOperations] = useState<AgentOperations | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredAgents = agents.filter(agent => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      (agent.agentCode && agent.agentCode.toLowerCase().includes(query)) ||
+      (agent.fullName && agent.fullName.toLowerCase().includes(query)) ||
+      (agent.email && agent.email.toLowerCase().includes(query)) ||
+      (agent.phone && agent.phone.toLowerCase().includes(query))
+    );
+  });
 
   useEffect(() => {
     void fetch(buildBackendUrl("/admin/insights/agents"), {
@@ -74,8 +87,21 @@ export function AgentsClient() {
         </div>
       </div>
 
+      <div className="relative">
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+          <Search className="h-5 w-5 text-slate-400" />
+        </div>
+        <input
+          type="text"
+          placeholder="Search by agent code, name, email, or mobile..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full rounded-2xl border border-slate-200 bg-white py-3.5 pl-12 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-500 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-all"
+        />
+      </div>
+
       <div className="grid gap-4">
-        {agents.map((agent) => (
+        {filteredAgents.map((agent) => (
           <article
             key={agent.id}
             className="grid gap-5 rounded-[30px] border border-slate-200 bg-white p-5 xl:grid-cols-[1fr_0.8fr_0.3fr]"
