@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { buildBackendUrl } from "@/lib/api-url";
+import { buildBackendUrl, adminAuthHeaders } from "@/lib/api-url";
 import { User, Phone, Mail, MapPin, Building, Calendar, Clock, CreditCard, FileText, CheckCircle, ExternalLink, Briefcase, Car, Building2, Ticket, MessageSquare, Plus } from "lucide-react";
 
 const bookingSections = ["hotel", "rental", "activity", "package", "custom-package"];
@@ -58,6 +58,7 @@ export function DashboardClient() {
       setError(null);
       const response = await fetch(buildBackendUrl(`/admin/insights/bookings?month=${month}&date=${selectedDate}`), {
         cache: "no-store",
+        headers: adminAuthHeaders(),
         credentials: "include",
       });
       const json = await response.json();
@@ -83,7 +84,7 @@ export function DashboardClient() {
     const note = draftNotes[booking.id] ?? booking.notes;
     await fetch(buildBackendUrl(`/admin/insights/bookings/${booking.type}/${booking.rawId}/note`), {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: adminAuthHeaders({ "Content-Type": "application/json" }),
       credentials: "include",
       body: JSON.stringify({ note, source: booking.source }),
     });
@@ -116,7 +117,7 @@ export function DashboardClient() {
     const status = statusForApproval(booking);
     await fetch(buildBackendUrl(`/admin/insights/bookings/${booking.type}/${booking.rawId}/status`), {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: adminAuthHeaders({ "Content-Type": "application/json" }),
       credentials: "include",
       body: JSON.stringify({ status, source: booking.source }),
     });

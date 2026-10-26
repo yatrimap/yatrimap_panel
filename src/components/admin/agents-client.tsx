@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { buildBackendUrl } from "@/lib/api-url";
+import { buildBackendUrl, adminAuthHeaders } from "@/lib/api-url";
 import type { AgentOperations, AgentOverview } from "@/lib/admin-types";
 import { Search } from "lucide-react";
 
@@ -32,6 +32,7 @@ export function AgentsClient() {
   useEffect(() => {
     void fetch(buildBackendUrl("/admin/insights/agents"), {
       cache: "no-store",
+      headers: adminAuthHeaders(),
       credentials: "include",
     })
       .then((response) => response.json())
@@ -45,6 +46,7 @@ export function AgentsClient() {
 
     void fetch(buildBackendUrl("/admin/insights/agent-operations"), {
       cache: "no-store",
+      headers: adminAuthHeaders(),
       credentials: "include",
     })
       .then((response) => response.json())

@@ -3,8 +3,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Plus, Trash, Search, CheckCircle2, ArrowRight } from "lucide-react";
-import { buildBackendUrl, getApiV1BaseUrl } from "@/lib/api-url";
+import { Plus, Trash, Search, CheckCircle2, ArrowRight, AlertTriangle, Minus } from "lucide-react";
+import { buildBackendUrl, getApiV1BaseUrl, adminAuthHeaders } from "@/lib/api-url";
 
 const getDeep = (obj, keys) => {
     let cur = obj;
@@ -24,6 +24,52 @@ const getNestedId = (value) => {
         if (typeof inner === "number") return String(inner);
     }
     return "";
+};
+
+const amt = (v) => Math.max(0, Math.round(Number(v) || 0));
+const inr = (n) => `₹${amt(n).toLocaleString("en-IN")}`;
+const todayKey = () => new Date(Date.now() + 330 * 60 * 1000).toISOString().slice(0, 10);
+
+const daysBetween = (a, b) => {
+    const s = Date.parse(`${String(a || "").slice(0, 10)}T00:00:00Z`);
+    const e = Date.parse(`${String(b || "").slice(0, 10)}T00:00:00Z`);
+    if (Number.isNaN(s) || Number.isNaN(e)) return 0;
+    return Math.round((e - s) / 86400000);
+};
+
+// Rooms are priced per night and rentals per day, like everywhere else on YatriMap.
+const unitsOf = (item) => (item.itemType === "Activity" ? 1 : Math.max(1, daysBetween(item.checkIn, item.checkOut)));
+const unitWord = (item, units) => {
+    if (item.itemType === "Hotel") return units === 1 ? "night" : "nights";
+    if (item.itemType === "Rental") return units === 1 ? "day" : "days";
+    return "";
+};
+
+const quoteKey = (item) => `${item.itemId}:${getNestedId(item.variationId) || "base"}:${item.activityDate || ""}`;
+
+// YatriMap's usual advance (same rule as online bookings): activity per option, ₹300 a room, ₹100/200/300 a scooty/bike/other.
+const standardAdvance = (item, quote) => {
+    const qty = Math.max(1, amt(item.quantity));
+    if (item.itemType === "Hotel") return 300 * qty;
+    if (item.itemType === "Rental") {
+        const c = String(item.coreItem?.vehicleCategory || item.coreItem?.vehicleModelId?.vehicleCategory || "").toLowerCase();
+        return (c.includes("scoot") ? 100 : c.includes("bike") ? 200 : 300) * qty;
+    }
+    return quote ? amt(quote.advancePerUnit) * qty : 0;
+};
+
+/** Everything the cart shows and sends for one line. */
+const lineOf = (item, quote) => {
+    const units = unitsOf(item);
+    const qty = Math.max(1, amt(item.quantity));
+    const slot = quote?.slots?.find((sl) => sl.label === item.activityTime) || null;
+    const listPrice = item.itemType === "Activity" && quote ? (slot?.price ?? quote.listUnitPrice) : null;
+    const price = item.itemType === "Activity" && !item.priceTouched && listPrice != null ? listPrice : amt(item.price);
+    const subtotal = price * qty * units;
+    const discount = amt(item.discount);
+    const total = Math.max(0, subtotal - discount);
+    const advance = item.advance === undefined ? Math.min(standardAdvance(item, quote), total) : amt(item.advance);
+    return { units, qty, price, listPrice, subtotal, discount, total, advance, balance: Math.max(0, total - advance), discountTooBig: discount > subtotal, advanceTooBig: advance > total };
 };
 
 export default function CustomPackageBuilder() {
@@ -51,6 +97,9 @@ export default function CustomPackageBuilder() {
 
     // Checkout Form State
     const [guestDetails, setGuestDetails] = useState({ name: "", email: "", phone: "", notes: "" });
+    const [advancePayment, setAdvancePayment] = useState({ mode: "upi", reference: "" });
+    // Activity slots / prices / usual advance for the chosen date, per cart line.
+    const [quotes, setQuotes] = useState({});
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [checkoutStep, setCheckoutStep] = useState(1);
 
@@ -204,41 +253,69 @@ export default function CustomPackageBuilder() {
         return cart.find((c) => c.key === key)?.quantity || 0;
     };
 
-    const removeFromCart = (cartId) => setCart(cart.filter(item => item.id !== cartId));
+    const removeFromCart = (cartId) => setCart((prev) => prev.filter(item => item.id !== cartId));
 
-    const handlePriceChange = (cartId, newPrice) => {
-        setCart(cart.map(item => item.id === cartId ? { ...item, price: Number(newPrice) } : item));
+    const updateItem = (cartId, patch) => {
+        setCart((prev) => prev.map(item => item.id === cartId ? { ...item, ...patch } : item));
     };
 
-    const handleDateChange = (cartId, field, value) => {
-        setCart(cart.map(item => item.id === cartId ? { ...item, [field]: value } : item));
-    };
+    const handleDateChange = (cartId, field, value) => updateItem(cartId, { [field]: value });
 
-    const getTotalPrice = () => {
-        return cart.reduce((total, item) => total + (Number(item.price) * item.quantity), 0);
-    };
+    useEffect(() => {
+        cart.filter((c) => c.itemType === "Activity" && c.activityDate).forEach((c) => {
+            const key = quoteKey(c);
+            if (quotes[key]) return;
+            setQuotes((q) => ({ ...q, [key]: { loading: true } }));
+            const params = new URLSearchParams({ activityId: c.itemId, date: c.activityDate });
+            const variationId = getNestedId(c.variationId);
+            if (variationId) params.set("variationId", variationId);
+            axios.get(buildBackendUrl(`/admin/custom-packages/activity-quote?${params.toString()}`), { headers: adminAuthHeaders(), withCredentials: true })
+                .then((res) => setQuotes((q) => ({ ...q, [key]: { data: res.data.data } })))
+                .catch((err) => setQuotes((q) => ({ ...q, [key]: { error: err.response?.data?.message || "Could not load slots for this date" } })));
+        });
+    }, [cart, quotes]);
+
+    const quoteOf = (item) => quotes[quoteKey(item)]?.data || null;
+    const lines = cart.map((item) => ({ item, quote: quoteOf(item), m: lineOf(item, quoteOf(item)) }));
+    const totals = lines.reduce(
+        (acc, { m }) => ({ subtotal: acc.subtotal + m.subtotal, discount: acc.discount + m.discount, total: acc.total + m.total, advance: acc.advance + m.advance, balance: acc.balance + m.balance }),
+        { subtotal: 0, discount: 0, total: 0, advance: 0, balance: 0 }
+    );
+    const getTotalPrice = () => totals.total;
 
     const submitPackage = async () => {
         if (cart.length === 0) return toast.error("Cart is empty");
         if (!guestDetails.name || !guestDetails.email || !guestDetails.phone) return toast.error("Fill out all guest details");
 
-        // Validate dates
-        for (const item of cart) {
+        // Check every line the way the server will.
+        for (const { item, quote, m } of lines) {
             if (item.itemType === "Hotel" || item.itemType === "Rental") {
                 if (!item.checkIn || !item.checkOut) return toast.error(`Provide Check-In and Check-Out for ${item.name}`);
+                if (daysBetween(item.checkIn, item.checkOut) < 1) return toast.error(`Check-out must be after check-in for ${item.name}`);
             }
-            if (item.itemType === "Activity" && !item.activityDate) {
-                return toast.error(`Provide Activity Date for ${item.name}`);
+            if (item.itemType === "Activity") {
+                if (!item.activityDate) return toast.error(`Provide Activity Date for ${item.name}`);
+                const q = quotes[quoteKey(item)];
+                if (!q || q.loading) return toast.error(`Loading slots for ${item.name}, try again in a moment`);
+                if (q.error) return toast.error(`${item.name}: ${q.error}`);
+                if (quote.pastDate) return toast.error(`${item.name}: that date has passed`);
+                if (quote.closed) return toast.error(`${item.name} is closed on ${item.activityDate}${quote.closedReason ? ` (${quote.closedReason})` : ""}`);
+                if (quote.slots.length && !quote.slots.some((sl) => sl.label === item.activityTime)) return toast.error(`Pick a slot for ${item.name}`);
             }
+            if (m.discountTooBig) return toast.error(`Discount for ${item.name} is more than its price`);
+            if (m.advanceTooBig) return toast.error(`Advance for ${item.name} is more than its total`);
         }
 
         const payload = {
             guestDetails,
-            items: cart.map(item => ({
+            advancePayment,
+            items: lines.map(({ item, m }) => ({
                 itemType: item.itemType,
                 name: item.name,
-                price: item.price,
-                quantity: item.quantity,
+                price: m.price,
+                quantity: m.qty,
+                discount: m.discount,
+                advance: m.advance,
                 adults: item.adults || 1,
                 children: item.children || 0,
                 hotelId: item.itemType === "Hotel" ? getNestedId(item.coreItem._id) : undefined,
@@ -246,22 +323,27 @@ export default function CustomPackageBuilder() {
                 hubId: item.itemType === "Rental" ? getNestedId(item.coreItem.hubId) || getNestedId(item.coreItem.hub?._id) : undefined,
                 vehicleModelId: item.itemType === "Rental" ? getNestedId(item.coreItem.vehicleModelId) || getNestedId(item.coreItem._id) : undefined,
                 activityId: item.itemType === "Activity" ? getNestedId(item.coreItem._id) : undefined,
+                variationId: item.itemType === "Activity" ? getNestedId(item.variationId) || undefined : undefined,
+                activityTime: item.itemType === "Activity" ? item.activityTime || undefined : undefined,
                 checkIn: item.checkIn || undefined,
                 checkOut: item.checkOut || undefined,
                 activityDate: item.activityDate || undefined
             })),
-            totalPrice: getTotalPrice()
+            totalPrice: totals.total
         };
 
         try {
             setIsSubmitting(true);
             const res = await axios.post(buildBackendUrl("/admin/custom-packages/book"), payload, {
+                headers: adminAuthHeaders(),
                 withCredentials: true
             });
             if (res.data.success) {
-                toast.success("Custom Package Booked successfully!");
+                toast.success(`Package ${res.data.package?.bookingId || ""} booked. Guests and companies are notified.`);
                 setCart([]);
                 setGuestDetails({ name: "", email: "", phone: "", notes: "" });
+                setAdvancePayment({ mode: "upi", reference: "" });
+                setCheckoutStep(1);
             }
         } catch (error) {
             console.error(error);
@@ -414,42 +496,23 @@ export default function CustomPackageBuilder() {
                                         )}
 
                                         {cartItem.itemType === "Activity" && (
-                                            <div className="text-sm">
-                                                <label className="text-xs text-slate-500 block mb-1">Activity Date</label>
-                                                <input type="date" value={cartItem.activityDate} onChange={(e) => handleDateChange(cartItem.id, "activityDate", e.target.value)} className="w-full border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-slate-400" />
-                                            </div>
+                                            <ActivityFields item={cartItem} quoteState={quotes[quoteKey(cartItem)]} onChange={(patch) => updateItem(cartItem.id, patch)} />
                                         )}
 
-                                        {(cartItem.itemType === "Hotel" || cartItem.itemType === "Activity") && (
+                                        {cartItem.itemType === "Hotel" && (
                                             <div className="grid grid-cols-2 gap-2 text-sm mt-3 border-t border-slate-100 pt-3">
                                                 <div>
                                                     <label className="text-xs text-slate-500 block mb-1 font-medium text-slate-600">Adults</label>
-                                                    <div className="flex items-center">
-                                                        <button onClick={() => handleDateChange(cartItem.id, "adults", Math.max(1, (cartItem.adults || 1) - 1))} className="bg-slate-100 px-2.5 py-1 rounded-l border border-slate-200 hover:bg-slate-200 transition-colors">-</button>
-                                                        <div className="w-10 text-center border-y border-slate-200 py-1 bg-white">{cartItem.adults || 1}</div>
-                                                        <button onClick={() => handleDateChange(cartItem.id, "adults", (cartItem.adults || 1) + 1)} className="bg-slate-100 px-2.5 py-1 rounded-r border border-slate-200 hover:bg-slate-200 transition-colors">+</button>
-                                                    </div>
+                                                    <Stepper value={cartItem.adults || 1} min={1} onChange={(v) => updateItem(cartItem.id, { adults: v })} />
                                                 </div>
                                                 <div>
                                                     <label className="text-xs text-slate-500 block mb-1 font-medium text-slate-600">Children</label>
-                                                    <div className="flex items-center">
-                                                        <button onClick={() => handleDateChange(cartItem.id, "children", Math.max(0, (cartItem.children || 0) - 1))} className="bg-slate-100 px-2.5 py-1 rounded-l border border-slate-200 hover:bg-slate-200 transition-colors">-</button>
-                                                        <div className="w-10 text-center border-y border-slate-200 py-1 bg-white">{cartItem.children || 0}</div>
-                                                        <button onClick={() => handleDateChange(cartItem.id, "children", (cartItem.children || 0) + 1)} className="bg-slate-100 px-2.5 py-1 rounded-r border border-slate-200 hover:bg-slate-200 transition-colors">+</button>
-                                                    </div>
+                                                    <Stepper value={cartItem.children || 0} min={0} onChange={(v) => updateItem(cartItem.id, { children: v })} />
                                                 </div>
                                             </div>
                                         )}
 
-                                        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
-                                            <label className="text-sm text-slate-500 font-medium whitespace-nowrap">Price Override (₹):</label>
-                                            <input
-                                                type="number"
-                                                value={cartItem.price}
-                                                onChange={(e) => handlePriceChange(cartItem.id, e.target.value)}
-                                                className="w-full border-b border-slate-300 px-1 py-1 text-slate-900 font-semibold focus:outline-none focus:border-slate-900 text-right bg-transparent transition-colors hover:bg-slate-50 rounded"
-                                            />
-                                        </div>
+                                        <MoneyFields item={cartItem} quote={quoteOf(cartItem)} onChange={(patch) => updateItem(cartItem.id, patch)} />
                                     </div>
                                 </div>
                             ))
@@ -472,6 +535,22 @@ export default function CustomPackageBuilder() {
                                         <input type="text" placeholder="+91 9876543210" value={guestDetails.phone} onChange={e => setGuestDetails({ ...guestDetails, phone: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-slate-400 focus:bg-white transition-colors" />
                                     </div>
                                 </div>
+                                {totals.advance > 0 && (
+                                    <div className="rounded-lg bg-amber-50 border border-amber-100 p-3">
+                                        <div className="text-xs font-semibold text-amber-800 mb-2">Advance {inr(totals.advance)} received by YatriMap</div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <select value={advancePayment.mode} onChange={e => setAdvancePayment({ ...advancePayment, mode: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:border-slate-400">
+                                                <option value="upi">UPI</option>
+                                                <option value="cash">Cash</option>
+                                                <option value="bank">Bank transfer</option>
+                                                <option value="card">Card</option>
+                                                <option value="online">Payment link</option>
+                                                <option value="other">Other</option>
+                                            </select>
+                                            <input type="text" placeholder="Txn / UTR (optional)" value={advancePayment.reference} onChange={e => setAdvancePayment({ ...advancePayment, reference: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:border-slate-400" />
+                                        </div>
+                                    </div>
+                                )}
                                 <div>
                                     <label className="text-xs text-slate-500 font-medium mb-1 block">Internal Notes</label>
                                     <textarea placeholder="Any special requests or admin notes..." value={guestDetails.notes} onChange={e => setGuestDetails({ ...guestDetails, notes: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 min-h-[100px] outline-none focus:border-slate-400 focus:bg-white transition-colors resize-none" />
@@ -483,9 +562,16 @@ export default function CustomPackageBuilder() {
 
                 {cart.length > 0 && (
                     <div className="p-6 py-4 border-t border-slate-200 bg-white">
-                        <div className="flex items-center justify-between text-lg mb-4">
-                            <span className="font-medium text-slate-500 text-sm uppercase tracking-wider">Total Package Value</span>
-                            <span className="font-bold text-slate-900 text-2xl">₹{getTotalPrice()}</span>
+                        <div className="mb-4 space-y-1 text-sm">
+                            {totals.discount > 0 && (
+                                <div className="flex justify-between text-slate-500"><span>Before discount</span><span className="line-through">{inr(totals.subtotal)}</span></div>
+                            )}
+                            <div className="flex items-center justify-between">
+                                <span className="font-medium text-slate-500 text-sm uppercase tracking-wider">Total Package Value</span>
+                                <span className="font-bold text-slate-900 text-2xl">{inr(getTotalPrice())}</span>
+                            </div>
+                            <div className="flex justify-between text-amber-700 font-semibold"><span>Advance to YatriMap now</span><span>{inr(totals.advance)}</span></div>
+                            <div className="flex justify-between text-slate-600"><span>Guest pays at hotel / hub / company</span><span>{inr(totals.balance)}</span></div>
                         </div>
 
                         {checkoutStep === 1 ? (
@@ -748,3 +834,116 @@ const InventoryCard = ({ item, type, onPlus, onMinus, getQty, city, globalDates,
     }
     return null;
 }
+
+const Stepper = ({ value, min = 0, onChange }) => (
+    <div className="flex items-center">
+        <button type="button" onClick={() => onChange(Math.max(min, value - 1))} className="bg-slate-100 px-2.5 py-1 rounded-l border border-slate-200 hover:bg-slate-200 transition-colors"><Minus className="w-3 h-3" /></button>
+        <div className="w-10 text-center border-y border-slate-200 py-1 bg-white">{value}</div>
+        <button type="button" onClick={() => onChange(value + 1)} className="bg-slate-100 px-2.5 py-1 rounded-r border border-slate-200 hover:bg-slate-200 transition-colors"><Plus className="w-3 h-3" /></button>
+    </div>
+);
+
+const minutesLabel = (m) => {
+    if (m == null) return "";
+    const h = Math.floor(m / 60);
+    const mm = String(m % 60).padStart(2, "0");
+    return `${((h + 11) % 12) + 1}:${mm} ${h < 12 ? "AM" : "PM"}`;
+};
+
+/** Date, slot and count for an activity line, from that day's real slots (same as customers see). */
+const ActivityFields = ({ item, quoteState, onChange }) => {
+    const quote = quoteState?.data || null;
+    const unit = quote?.unit || { mode: "persons", label: "Persons" };
+    return (
+        <div className="space-y-3 text-sm">
+            <div>
+                <label className="text-xs text-slate-500 block mb-1">Activity Date</label>
+                <input type="date" min={todayKey()} value={item.activityDate} onChange={(e) => onChange({ activityDate: e.target.value, activityTime: "" })} className="w-full border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-slate-400" />
+            </div>
+
+            {quoteState?.loading && <div className="text-xs text-slate-400">Loading slots…</div>}
+            {quoteState?.error && <div className="flex items-center gap-1.5 text-xs font-medium text-red-600"><AlertTriangle className="w-3.5 h-3.5" /> {quoteState.error}</div>}
+            {quote?.pastDate && <div className="flex items-center gap-1.5 text-xs font-medium text-red-600"><AlertTriangle className="w-3.5 h-3.5" /> This date has passed</div>}
+            {quote?.closed && (
+                <div className="flex items-center gap-1.5 rounded-md bg-red-50 px-2 py-1.5 text-xs font-medium text-red-700">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> Closed on this date{quote.closedReason ? ` · ${quote.closedReason}` : ""}
+                </div>
+            )}
+
+            {quote && !quote.closed && quote.slots.length > 0 && (
+                <div>
+                    <label className="text-xs text-slate-500 block mb-1">Slot</label>
+                    <select value={item.activityTime || ""} onChange={(e) => onChange({ activityTime: e.target.value })} className={`w-full border rounded-md px-2 py-1.5 outline-none bg-white ${item.activityTime ? "border-slate-200" : "border-amber-300"}`}>
+                        <option value="">Pick a slot</option>
+                        {quote.slots.map((sl) => (
+                            <option key={sl.label} value={sl.label}>
+                                {sl.label}{sl.start != null ? ` · ${minutesLabel(sl.start)}` : ""}{sl.price != null ? ` · ₹${sl.price}` : ""}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
+            {quote && !quote.closed && quote.slots.length === 0 && (
+                <div className="text-xs text-slate-400">No fixed slots on this date</div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
+                <div>
+                    <label className="text-xs text-slate-600 block mb-1 font-medium">{unit.label}</label>
+                    <Stepper value={Math.max(1, amt(item.quantity))} min={1} onChange={(v) => onChange({ quantity: v })} />
+                </div>
+                {unit.mode === "group" && (
+                    <div>
+                        <label className="text-xs text-slate-600 block mb-1 font-medium">People{unit.groupSize ? ` (up to ${unit.groupSize} each)` : ""}</label>
+                        <Stepper value={item.adults || 1} min={1} onChange={(v) => onChange({ adults: v, children: 0 })} />
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+/** Price, discount and advance for any line, with what the guest pays where. */
+const MoneyFields = ({ item, quote, onChange }) => {
+    const m = lineOf(item, quote);
+    const per = item.itemType === "Hotel" ? "/ room / night" : item.itemType === "Rental" ? "/ vehicle / day" : `/ ${(quote?.unit?.label || "person").toLowerCase().replace(/s$/, "")}`;
+    const field = "w-full border border-slate-200 rounded-md px-2 py-1 text-right font-semibold text-slate-900 outline-none focus:border-slate-400";
+    // What the company normally keeps on an online booking: price minus YatriMap's usual advance.
+    const usualShare = item.itemType === "Activity" && quote ? Math.max(0, amt(m.listPrice) * m.qty - standardAdvance(item, quote)) : null;
+    return (
+        <div className="mt-3 pt-3 border-t border-slate-100 space-y-2 text-sm">
+            <div className="grid grid-cols-3 gap-2">
+                <div>
+                    <label className="text-[11px] text-slate-500 block mb-1">Price {per}</label>
+                    <input type="number" min="0" value={m.price} onChange={(e) => onChange({ price: e.target.value, priceTouched: true })} className={field} />
+                </div>
+                <div>
+                    <label className="text-[11px] text-slate-500 block mb-1">Discount (₹)</label>
+                    <input type="number" min="0" value={item.discount ?? ""} placeholder="0" onChange={(e) => onChange({ discount: e.target.value })} className={`${field} ${m.discountTooBig ? "border-red-400" : ""}`} />
+                </div>
+                <div>
+                    <label className="text-[11px] text-slate-500 block mb-1">Advance (₹)</label>
+                    <input type="number" min="0" value={item.advance === undefined ? m.advance : item.advance} onChange={(e) => onChange({ advance: e.target.value })} className={`${field} ${m.advanceTooBig ? "border-red-400" : ""}`} />
+                </div>
+            </div>
+            {item.itemType === "Activity" && item.priceTouched && m.listPrice != null && amt(item.price) !== m.listPrice && (
+                <button type="button" onClick={() => onChange({ price: m.listPrice, priceTouched: false })} className="text-[11px] font-medium text-slate-500 underline">
+                    Use this slot's price ₹{m.listPrice}
+                </button>
+            )}
+            <div className="rounded-lg bg-slate-50 px-3 py-2 space-y-0.5 text-xs">
+                <div className="flex justify-between text-slate-500">
+                    <span>{inr(m.price)} × {m.qty}{item.itemType !== "Activity" ? ` × ${m.units} ${unitWord(item, m.units)}` : ""}</span>
+                    <span>{inr(m.subtotal)}</span>
+                </div>
+                {m.discount > 0 && <div className="flex justify-between text-emerald-600"><span>Discount</span><span>−{inr(m.discount)}</span></div>}
+                <div className="flex justify-between font-semibold text-slate-900"><span>Total</span><span>{inr(m.total)}</span></div>
+                <div className="flex justify-between text-amber-700"><span>Advance to YatriMap now</span><span>{inr(m.advance)}</span></div>
+                <div className="flex justify-between text-slate-700"><span>Pay at {item.itemType === "Hotel" ? "hotel" : item.itemType === "Rental" ? "hub" : "company"}</span><span>{inr(m.balance)}</span></div>
+                {usualShare != null && m.balance < usualShare && (
+                    <div className="pt-1 text-[11px] text-amber-700">Company collects {inr(usualShare - m.balance)} less than its usual share ({inr(usualShare)}).</div>
+                )}
+            </div>
+        </div>
+    );
+};

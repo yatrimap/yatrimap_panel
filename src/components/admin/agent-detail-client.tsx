@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { buildBackendUrl } from "@/lib/api-url";
+import { buildBackendUrl, adminAuthHeaders } from "@/lib/api-url";
 import type { AgentDetails } from "@/lib/admin-types";
 
 const money = new Intl.NumberFormat("en-IN", {
@@ -17,6 +17,7 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
   const load = async () => {
     const response = await fetch(buildBackendUrl(`/admin/insights/agents/${agentId}`), {
       cache: "no-store",
+      headers: adminAuthHeaders(),
       credentials: "include",
     });
     const json = await response.json();
@@ -33,6 +34,7 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
     const loadAgent = async () => {
       const response = await fetch(buildBackendUrl(`/admin/insights/agents/${agentId}`), {
         cache: "no-store",
+        headers: adminAuthHeaders(),
         credentials: "include",
       });
       const json = await response.json();
@@ -51,7 +53,7 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
   const updateCommission = async (commissionId: string, status: string) => {
     await fetch(buildBackendUrl(`/admin/insights/commissions/${commissionId}/status`), {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: adminAuthHeaders({ "Content-Type": "application/json" }),
       credentials: "include",
       body: JSON.stringify({ status }),
     });
@@ -61,7 +63,7 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
   const updateWithdrawal = async (withdrawalId: string, status: string) => {
     await fetch(buildBackendUrl(`/admin/insights/withdrawals/${withdrawalId}/status`), {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: adminAuthHeaders({ "Content-Type": "application/json" }),
       credentials: "include",
       body: JSON.stringify({
         status,
