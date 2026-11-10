@@ -164,23 +164,23 @@ export function DashboardClient() {
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+      <section className="grid grid-cols-2 gap-2.5 sm:gap-4 md:grid-cols-3 xl:grid-cols-6">
         {metricCards.map((card) => (
-          <div key={card.label} className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
-            <p className="text-sm text-slate-500">{card.label}</p>
-            <p className="mt-3 font-serif text-3xl text-slate-950">{card.value}</p>
+          <div key={card.label} className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 sm:rounded-[28px] sm:p-5">
+            <p className="truncate text-xs text-slate-500 sm:text-sm">{card.label}</p>
+            <p className="mt-1.5 truncate font-serif text-2xl text-slate-950 sm:mt-3 sm:text-3xl">{card.value}</p>
           </div>
         ))}
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-        <div className="rounded-[30px] border border-slate-200 bg-white p-5">
+      <section className="grid gap-4 *:min-w-0 sm:gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+        <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 sm:rounded-[30px] sm:p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Booking lens</p>
-              <h3 className="mt-2 font-serif text-3xl">Today, tomorrow, and monthly view</h3>
+              <h3 className="mt-2 font-serif text-2xl sm:text-3xl">Today, tomorrow, and monthly view</h3>
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2 sm:gap-3">
               <button
                 className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm border ${isCalendarExpanded ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
                 onClick={() => setIsCalendarExpanded(!isCalendarExpanded)}
@@ -213,14 +213,14 @@ export function DashboardClient() {
           </div>
 
           {isCalendarExpanded && (
-            <div className="mt-6 grid grid-cols-7 gap-3 text-center text-xs uppercase tracking-[0.2em] text-slate-400">
+            <div className="mt-6 grid grid-cols-7 gap-1 text-center text-[10px] uppercase tracking-normal text-slate-400 sm:gap-3 sm:text-xs sm:tracking-[0.2em]">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
                 <div key={day}>{day}</div>
               ))}
             </div>
           )}
 
-          <div className={`mt-4 grid gap-3 ${isCalendarExpanded ? 'grid-cols-7' : 'grid-cols-2'}`}>
+          <div className={`mt-4 grid ${isCalendarExpanded ? 'grid-cols-7 gap-1 sm:gap-3' : 'grid-cols-2 gap-3'}`}>
             {data.calendar.days
               .filter(day => isCalendarExpanded || day.date === todayKey || day.date === tomorrowKey)
               .map((day) => {
@@ -229,33 +229,33 @@ export function DashboardClient() {
                 <button
                   key={day.date}
                   onClick={() => setSelectedDate(day.date)}
-                  className={`group relative min-h-28 rounded-[24px] border p-3 text-left transition ${isActive
+                  className={`group relative text-left transition border ${isCalendarExpanded ? 'min-h-14 rounded-xl p-1.5 sm:min-h-28 sm:rounded-[24px] sm:p-3' : 'min-h-28 rounded-[24px] p-3'} ${isActive
                       ? "border-slate-900 bg-slate-900 text-white"
                       : "border-slate-200 bg-slate-50 hover:border-teal-300 hover:bg-white"
                     }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{Number(day.date.slice(-2))}</span>
-                    <span className={`text-xs ${isActive ? "text-slate-300" : "text-slate-400"}`}>
+                    <span className={`text-[10px] sm:text-xs ${isCalendarExpanded ? 'hidden sm:inline' : ''} ${isActive ? "text-slate-300" : "text-slate-400"}`}>
                       {day.totalBookings} bk
                     </span>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-1">
+                  <div className={`flex flex-wrap gap-1 ${isCalendarExpanded ? 'mt-1 sm:mt-3' : 'mt-3'}`}>
                     {day.markers.map((marker) => (
                       <span
                         key={marker.type}
-                        className="h-2.5 w-2.5 rounded-full"
+                        className={`rounded-full ${isCalendarExpanded ? 'h-1.5 w-1.5 sm:h-2.5 sm:w-2.5' : 'h-2.5 w-2.5'}`}
                         style={{ backgroundColor: marker.color }}
                         title={`${marker.label}: ${marker.count}`}
                       />
                     ))}
                   </div>
-                  <div className={`mt-3 text-xs ${isActive ? "text-slate-300" : "text-slate-500"}`}>
+                  <div className={`mt-3 text-xs ${isCalendarExpanded ? 'hidden sm:block' : ''} ${isActive ? "text-slate-300" : "text-slate-500"}`}>
                     {currency.format(day.totalRevenue)}
                   </div>
 
                   {day.preview.length > 0 ? (
-                    <div className="pointer-events-none absolute left-3 top-full z-[999] mt-2 hidden w-64 rounded-2xl border border-slate-200 bg-white p-3 text-slate-800 shadow-2xl group-hover:block">
+                    <div className="pointer-events-none absolute left-3 top-full z-[999] mt-2 hidden w-64 rounded-2xl border border-slate-200 bg-white p-3 text-slate-800 shadow-2xl md:group-hover:block">
                       <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Booking preview</p>
                       <div className="mt-3 space-y-2">
                         {day.preview.map((item) => (
@@ -277,7 +277,7 @@ export function DashboardClient() {
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-[30px] border border-slate-200 bg-white p-5">
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:rounded-[30px] sm:p-5">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Type mix</p>
             <div className="mt-4 space-y-3">
               {bookingSections.map((section) => (
@@ -310,11 +310,11 @@ export function DashboardClient() {
             </div>
           </div>
 
-          <div className="rounded-[30px] border border-slate-200 bg-white p-5">
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:rounded-[30px] sm:p-5">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Selected date</p>
-            <h3 className="mt-2 font-serif text-3xl">{formatDate(data.selectedDate.date)}</h3>
+            <h3 className="mt-2 font-serif text-2xl sm:text-3xl">{formatDate(data.selectedDate.date)}</h3>
             <p className="mt-2 text-sm text-slate-500">{data.selectedDate.totalBookings} bookings scheduled</p>
-            <div className="mt-4 grid gap-3">
+            <div className="mt-4 grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-1">
               {bookingSections.map((section) => (
                 <div key={section} className="rounded-2xl bg-slate-50 px-4 py-3">
                   <p className="text-sm capitalize text-slate-500">
@@ -332,7 +332,7 @@ export function DashboardClient() {
 
       <section className="space-y-6">
         {/* View Mode Toggle */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
           <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1">
             <button
               onClick={() => { setViewMode("booking-date"); setActiveTab("all"); }}
@@ -376,7 +376,7 @@ export function DashboardClient() {
           </div>
         )}
 
-        <div className="flex flex-wrap gap-3 border-b border-slate-200 pb-4">
+        <div className="-mx-4 flex gap-2 overflow-x-auto border-b border-slate-200 px-4 pb-4 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:gap-3 sm:overflow-visible sm:px-0">
           {["all", ...bookingSections].map((tab) => {
             const label = tab === 'all' ? 'All' : tab === 'hotel' ? 'Stay (Hotel)' : tab === 'custom-package' ? 'Custom Package' : tab.charAt(0).toUpperCase() + tab.slice(1);
             const activeSections = viewMode === "created-date" ? (data.createdOnDate?.sections || {}) : data.selectedDate.sections;
@@ -387,7 +387,7 @@ export function DashboardClient() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all ${
+                className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all sm:px-5 sm:py-2.5 ${
                   activeTab === tab
                     ? viewMode === "created-date" ? "bg-teal-700 text-white shadow-md" : "bg-slate-900 text-white shadow-md"
                     : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:border-slate-300"
@@ -404,13 +404,13 @@ export function DashboardClient() {
           })}
         </div>
 
-        <div className={`rounded-[30px] border bg-white p-6 shadow-sm ${viewMode === "created-date" ? "border-teal-200" : "border-slate-200"}`}>
+        <div className={`rounded-3xl border bg-white p-4 shadow-sm sm:rounded-[30px] sm:p-6 ${viewMode === "created-date" ? "border-teal-200" : "border-slate-200"}`}>
           <div className="flex items-center justify-between">
             <div>
               <p className={`font-mono text-xs uppercase tracking-[0.3em] ${viewMode === "created-date" ? "text-teal-700" : "text-teal-700"}`}>
                 {viewMode === "created-date" ? "Created on this date" : "Booking details"}
               </p>
-              <h3 className="mt-2 font-serif text-3xl capitalize">
+              <h3 className="mt-2 font-serif text-2xl capitalize sm:text-3xl">
                 {activeTab === 'all' ? 'All' : activeTab === 'hotel' ? 'Stay' : activeTab === 'custom-package' ? 'Custom Package' : activeTab} bookings
               </h3>
             </div>
@@ -458,11 +458,11 @@ export function DashboardClient() {
 
       {activeBooking ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 p-4 md:items-center">
-          <div className="w-full max-w-3xl rounded-[32px] bg-white p-6 shadow-2xl">
+          <div className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-[28px] bg-white p-5 shadow-2xl sm:rounded-[32px] sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Booking drawer</p>
-                <h3 className="mt-2 font-serif text-3xl">{activeBooking.title}</h3>
+                <h3 className="mt-2 font-serif text-2xl sm:text-3xl">{activeBooking.title}</h3>
               </div>
               <button
                 onClick={() => setActiveBooking(null)}
@@ -511,7 +511,7 @@ function ExpandableBookingCard({
     e.stopPropagation();
     let url = "";
     if (booking.type === 'activity') {
-      url = "https://hoteladmin.yatrimap.com/welcome/activitybooking";
+      url = "https://hoteladmin.yatrimap.com/welcome/activity/bookings";
     } else if (booking.type === 'hotel') {
       const propId = booking.propertyId || booking.hotelInfo?.id || booking.hotelInfo?._id || "unknown";
       url = `https://hoteladmin.yatrimap.com/${propId}/admin/bookings/${booking.rawId}`;
@@ -543,20 +543,20 @@ function ExpandableBookingCard({
     >
       {/* Header - Always visible */}
       <div 
-        className="flex cursor-pointer items-center justify-between p-5" 
+        className="flex cursor-pointer items-center justify-between gap-3 p-3.5 sm:p-5" 
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <div className="flex flex-1 items-center gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
           <div 
-            className="flex h-12 w-12 items-center justify-center rounded-2xl"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl sm:h-12 sm:w-12"
             style={{ backgroundColor: `${booking.color}15`, color: booking.color }}
           >
             {getIcon()}
           </div>
           
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <h4 className="text-lg font-semibold text-slate-900">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h4 className="min-w-0 break-words text-base font-semibold text-slate-900 sm:text-lg">
                 {booking.type === 'hotel' && booking.hotelInfo?.name ? booking.hotelInfo.name : booking.title}
               </h4>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
@@ -569,7 +569,7 @@ function ExpandableBookingCard({
               </span>
             </div>
             
-            <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-slate-500 sm:text-sm">
               <span className="flex items-center gap-1.5"><User className="h-3.5 w-3.5" /> {booking.customer?.name}</span>
               <span className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5" /> {currency.format(booking.amount)}</span>
               {booking.schedule?.time && <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {booking.schedule.time}</span>}
@@ -595,7 +595,7 @@ function ExpandableBookingCard({
             <ExternalLink className="h-4 w-4" /> Go to booking
           </button>
           
-          <div className={`flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-transform ${isExpanded ? 'rotate-180 bg-slate-100' : ''}`}>
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-transform sm:h-10 sm:w-10 ${isExpanded ? 'rotate-180 bg-slate-100' : ''}`}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M6 9l6 6 6-6" />
             </svg>
@@ -605,8 +605,8 @@ function ExpandableBookingCard({
 
       {/* Expanded Content */}
       {isExpanded && (
-        <div className="border-t border-slate-100 bg-slate-50/50 p-6">
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="border-t border-slate-100 bg-slate-50/50 p-3.5 sm:p-6">
+          <div className="grid gap-3 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
             
             {/* Custom Package Component Items */}
             {booking.type === 'custom-package' && booking.items && booking.items.length > 0 && (
@@ -654,7 +654,7 @@ function ExpandableBookingCard({
               </div>
               <div className="space-y-3 text-sm text-slate-600">
                 <p className="flex items-center gap-3"><span className="font-medium text-slate-900 w-16">Name:</span> {booking.customer.name}</p>
-                <p className="flex items-center gap-3"><Mail className="h-4 w-4 text-slate-400" /> {booking.customer.email}</p>
+                <p className="flex min-w-0 items-center gap-3 break-all"><Mail className="h-4 w-4 shrink-0 text-slate-400" /> {booking.customer.email}</p>
                 <p className="flex items-center gap-3"><Phone className="h-4 w-4 text-slate-400" /> {booking.customer.phone}</p>
               </div>
             </div>
@@ -742,10 +742,10 @@ function ExpandableBookingCard({
           </div>
 
           {/* Action Bar */}
-          <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-6">
+          <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-200 pt-4 sm:mt-6 sm:flex sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 sm:pt-6">
             <button
               onClick={() => onSaveNote(booking)}
-              className="flex items-center gap-2 rounded-xl bg-white border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              className="flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
             >
               Save Note
             </button>
@@ -754,13 +754,13 @@ function ExpandableBookingCard({
                 e.stopPropagation();
                 onApprove(booking);
               }}
-              className="flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-teal-700"
+              className="flex items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-teal-700"
             >
               <CheckCircle className="h-4 w-4" /> Approve Booking
             </button>
             <button
               onClick={handleGoToBooking}
-              className="flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 md:hidden"
+              className="col-span-2 flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 md:hidden"
             >
               <ExternalLink className="h-4 w-4" /> Go to booking
             </button>

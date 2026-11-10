@@ -70,20 +70,20 @@ export function AgentsClient() {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+      <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 sm:rounded-[28px] sm:p-5">
           <p className="text-sm text-slate-500">All agents</p>
-          <p className="mt-3 font-serif text-4xl">{agents.length}</p>
+          <p className="mt-2 font-serif text-3xl sm:mt-3 sm:text-4xl">{agents.length}</p>
         </div>
-        <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 sm:rounded-[28px] sm:p-5">
           <p className="text-sm text-slate-500">Total live commission</p>
-          <p className="mt-3 font-serif text-4xl">
+          <p className="mt-2 font-serif text-3xl sm:mt-3 sm:text-4xl">
             {money.format(agents.reduce((sum, agent) => sum + agent.summary.totalCommission, 0))}
           </p>
         </div>
-        <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 sm:rounded-[28px] sm:p-5">
           <p className="text-sm text-slate-500">Withdrawable pool</p>
-          <p className="mt-3 font-serif text-4xl">
+          <p className="mt-2 font-serif text-3xl sm:mt-3 sm:text-4xl">
             {money.format(agents.reduce((sum, agent) => sum + agent.wallet.withdrawableAmount, 0))}
           </p>
         </div>
@@ -106,7 +106,7 @@ export function AgentsClient() {
         {filteredAgents.map((agent) => (
           <article
             key={agent.id}
-            className="grid gap-5 rounded-[30px] border border-slate-200 bg-white p-5 xl:grid-cols-[1fr_0.8fr_0.3fr]"
+            className="grid min-w-0 gap-4 *:min-w-0 rounded-3xl border border-slate-200 bg-white p-4 sm:gap-5 sm:rounded-[30px] sm:p-5 xl:grid-cols-[1fr_0.8fr_0.3fr]"
           >
             <div>
               <div className="flex flex-wrap items-center gap-3">
@@ -115,12 +115,12 @@ export function AgentsClient() {
                 </span>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">{agent.agentCode}</span>
               </div>
-              <h3 className="mt-4 font-serif text-3xl">{agent.fullName}</h3>
+              <h3 className="mt-3 font-serif text-2xl sm:mt-4 sm:text-3xl">{agent.fullName}</h3>
               <p className="mt-2 text-sm text-slate-600">
                 {agent.shopName} | {agent.city}
               </p>
               <div className="mt-4 grid gap-3 text-sm text-slate-600 md:grid-cols-2">
-                <div className="rounded-2xl bg-slate-50 p-4">
+                <div className="min-w-0 break-all rounded-2xl bg-slate-50 p-4">
                   <p>{agent.email}</p>
                   <p>{agent.phone}</p>
                 </div>
@@ -159,13 +159,13 @@ export function AgentsClient() {
       </div>
 
       {operations ? (
-        <div className="grid gap-6 xl:grid-cols-2">
-          <section className="rounded-[30px] border border-slate-200 bg-white p-5">
+        <div className="grid gap-4 sm:gap-6 xl:grid-cols-2">
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 sm:rounded-[30px] sm:p-5">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Pending commissions</p>
             <div className="mt-4 space-y-3">
               {operations.pendingCommissions.map((item) => (
                 <div key={item._id} className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <span>{item.agent?.fullName}</span>
                     <span>{item.status}</span>
                   </div>
@@ -178,12 +178,12 @@ export function AgentsClient() {
             </div>
           </section>
 
-          <section className="rounded-[30px] border border-slate-200 bg-white p-5">
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 sm:rounded-[30px] sm:p-5">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Payout requests</p>
             <div className="mt-4 space-y-3">
               {operations.withdrawalRequests.map((item) => (
                 <div key={item._id} className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <span>{item.agent?.fullName}</span>
                     <span>{item.status}</span>
                   </div>

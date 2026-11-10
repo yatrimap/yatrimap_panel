@@ -3,8 +3,11 @@
 import React, { useMemo, useState, useEffect } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Plus, Trash, Search, CheckCircle2, ArrowRight, AlertTriangle, Minus } from "lucide-react";
+import { Plus, Trash, Search, CheckCircle2, ArrowRight, AlertTriangle, Minus, Gift, X, ShoppingBag } from "lucide-react";
+import { AdminMenuButton } from "@/components/admin/admin-shell";
 import { buildBackendUrl, getApiV1BaseUrl, adminAuthHeaders } from "@/lib/api-url";
+import { OfferComposer } from "@/components/admin/offer-composer";
+import { mk, recallRecipients } from "@/lib/marketing";
 
 const getDeep = (obj, keys) => {
     let cur = obj;
@@ -102,6 +105,33 @@ export default function CustomPackageBuilder() {
     const [quotes, setQuotes] = useState({});
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [checkoutStep, setCheckoutStep] = useState(1);
+
+    // Offer mode (?offer=1&to=<customer ids> from Customers): the package goes to those customers as a
+    // trip offer on TouristGo (accept → admin confirms → advance) instead of being booked right now.
+    const [offerMode, setOfferMode] = useState(false);
+    const [recipients, setRecipients] = useState([]);
+    // Phones / tablets: the package panel opens as a full-screen sheet from the bottom bar.
+    const [cartOpen, setCartOpen] = useState(false);
+    useEffect(() => {
+        if (!cartOpen || window.innerWidth >= 1024) return undefined;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        return () => { document.body.style.overflow = prev; };
+    }, [cartOpen]);
+    useEffect(() => {
+        const sp = new URLSearchParams(window.location.search);
+        if (sp.get("offer") !== "1") return;
+        setOfferMode(true);
+        const ids = (sp.get("to") || "").split(",").filter((x) => /^[a-f0-9]{24}$/i.test(x));
+        const known = recallRecipients().filter((c) => ids.includes(c.id));
+        setRecipients(known);
+        ids.filter((id) => !known.some((c) => c.id === id)).slice(0, 20).forEach(async (id) => {
+            const r = await mk("GET", `/customers/${id}`);
+            if (!r.ok) return;
+            const c = r.data.customer;
+            setRecipients((list) => (list.some((x) => x.id === id) ? list : [...list, { id, name: c.name, email: c.email, phone: c.phone, segment: c.segment }]));
+        });
+    }, []);
 
     const apiV1BaseUrl = getApiV1BaseUrl();
     const apiRootUrl = useMemo(() => apiV1BaseUrl.replace(/\/api\/v1\/?$/, ""), [apiV1BaseUrl]);
@@ -283,52 +313,60 @@ export default function CustomPackageBuilder() {
     );
     const getTotalPrice = () => totals.total;
 
+    /** Checks every line the way the server will; returns the problem, or "" when it books. */
+    const lineProblem = () => {
+        if (cart.length === 0) return "Cart is empty";
+        for (const { item, quote, m } of lines) {
+            if (item.itemType === "Hotel" || item.itemType === "Rental") {
+                if (!item.checkIn || !item.checkOut) return `Provide Check-In and Check-Out for ${item.name}`;
+                if (daysBetween(item.checkIn, item.checkOut) < 1) return `Check-out must be after check-in for ${item.name}`;
+            }
+            if (item.itemType === "Activity") {
+                if (!item.activityDate) return `Provide Activity Date for ${item.name}`;
+                const q = quotes[quoteKey(item)];
+                if (!q || q.loading) return `Loading slots for ${item.name}, try again in a moment`;
+                if (q.error) return `${item.name}: ${q.error}`;
+                if (quote.pastDate) return `${item.name}: that date has passed`;
+                if (quote.closed) return `${item.name} is closed on ${item.activityDate}${quote.closedReason ? ` (${quote.closedReason})` : ""}`;
+                if (quote.slots.length && !quote.slots.some((sl) => sl.label === item.activityTime)) return `Pick a slot for ${item.name}`;
+            }
+            if (m.discountTooBig) return `Discount for ${item.name} is more than its price`;
+            if (m.advanceTooBig) return `Advance for ${item.name} is more than its total`;
+        }
+        return "";
+    };
+
+    const buildItems = () => lines.map(({ item, m }) => ({
+        itemType: item.itemType,
+        name: item.name,
+        price: m.price,
+        quantity: m.qty,
+        discount: m.discount,
+        advance: m.advance,
+        adults: item.adults || 1,
+        children: item.children || 0,
+        hotelId: item.itemType === "Hotel" ? getNestedId(item.coreItem._id) : undefined,
+        roomId: item.itemType === "Hotel" ? getNestedId(item.roomId) : undefined,
+        hubId: item.itemType === "Rental" ? getNestedId(item.coreItem.hubId) || getNestedId(item.coreItem.hub?._id) : undefined,
+        vehicleModelId: item.itemType === "Rental" ? getNestedId(item.coreItem.vehicleModelId) || getNestedId(item.coreItem._id) : undefined,
+        activityId: item.itemType === "Activity" ? getNestedId(item.coreItem._id) : undefined,
+        variationId: item.itemType === "Activity" ? getNestedId(item.variationId) || undefined : undefined,
+        activityTime: item.itemType === "Activity" ? item.activityTime || undefined : undefined,
+        checkIn: item.checkIn || undefined,
+        checkOut: item.checkOut || undefined,
+        activityDate: item.activityDate || undefined
+    }));
+
     const submitPackage = async () => {
         if (cart.length === 0) return toast.error("Cart is empty");
         if (!guestDetails.name || !guestDetails.email || !guestDetails.phone) return toast.error("Fill out all guest details");
-
-        // Check every line the way the server will.
-        for (const { item, quote, m } of lines) {
-            if (item.itemType === "Hotel" || item.itemType === "Rental") {
-                if (!item.checkIn || !item.checkOut) return toast.error(`Provide Check-In and Check-Out for ${item.name}`);
-                if (daysBetween(item.checkIn, item.checkOut) < 1) return toast.error(`Check-out must be after check-in for ${item.name}`);
-            }
-            if (item.itemType === "Activity") {
-                if (!item.activityDate) return toast.error(`Provide Activity Date for ${item.name}`);
-                const q = quotes[quoteKey(item)];
-                if (!q || q.loading) return toast.error(`Loading slots for ${item.name}, try again in a moment`);
-                if (q.error) return toast.error(`${item.name}: ${q.error}`);
-                if (quote.pastDate) return toast.error(`${item.name}: that date has passed`);
-                if (quote.closed) return toast.error(`${item.name} is closed on ${item.activityDate}${quote.closedReason ? ` (${quote.closedReason})` : ""}`);
-                if (quote.slots.length && !quote.slots.some((sl) => sl.label === item.activityTime)) return toast.error(`Pick a slot for ${item.name}`);
-            }
-            if (m.discountTooBig) return toast.error(`Discount for ${item.name} is more than its price`);
-            if (m.advanceTooBig) return toast.error(`Advance for ${item.name} is more than its total`);
-        }
+        const problem = lineProblem();
+        if (problem) return toast.error(problem);
 
         const payload = {
             guestDetails,
             advancePayment,
-            items: lines.map(({ item, m }) => ({
-                itemType: item.itemType,
-                name: item.name,
-                price: m.price,
-                quantity: m.qty,
-                discount: m.discount,
-                advance: m.advance,
-                adults: item.adults || 1,
-                children: item.children || 0,
-                hotelId: item.itemType === "Hotel" ? getNestedId(item.coreItem._id) : undefined,
-                roomId: item.itemType === "Hotel" ? getNestedId(item.roomId) : undefined,
-                hubId: item.itemType === "Rental" ? getNestedId(item.coreItem.hubId) || getNestedId(item.coreItem.hub?._id) : undefined,
-                vehicleModelId: item.itemType === "Rental" ? getNestedId(item.coreItem.vehicleModelId) || getNestedId(item.coreItem._id) : undefined,
-                activityId: item.itemType === "Activity" ? getNestedId(item.coreItem._id) : undefined,
-                variationId: item.itemType === "Activity" ? getNestedId(item.variationId) || undefined : undefined,
-                activityTime: item.itemType === "Activity" ? item.activityTime || undefined : undefined,
-                checkIn: item.checkIn || undefined,
-                checkOut: item.checkOut || undefined,
-                activityDate: item.activityDate || undefined
-            })),
+            items: buildItems(),
             totalPrice: totals.total
         };
 
@@ -354,15 +392,26 @@ export default function CustomPackageBuilder() {
     };
 
     return (
-        <div className="flex h-[calc(100vh-5px)] w-full overflow-hidden bg-slate-50 relative">
+        <div className="relative min-h-screen w-full bg-slate-50 lg:flex lg:h-screen lg:overflow-hidden">
             {/* Left Column: Inventory Selection */}
-            <div className="flex-1 flex flex-col overflow-y-auto border-r border-slate-200 hide-scrollbar scroll-smooth">
-                <div className="p-6 bg-white border-b border-slate-200 sticky top-0 z-10">
-                    <h1 className="text-2xl font-bold text-slate-900">Custom Package Builder</h1>
-                    <p className="text-sm text-slate-500 mt-1">Select items to compose a bundled suite for guests.</p>
+            <div className="flex flex-col pb-28 hide-scrollbar scroll-smooth lg:flex-1 lg:overflow-y-auto lg:border-r lg:border-slate-200 lg:pb-0">
+                <div className="bg-white border-b border-slate-200 p-4 sm:p-6 lg:sticky lg:top-0 lg:z-10">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                            <AdminMenuButton />
+                            <div className="min-w-0">
+                                <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{offerMode ? "Trip Offer Builder" : "Custom Package Builder"}</h1>
+                                <p className="text-[13px] text-slate-500 mt-0.5 sm:mt-1 sm:text-sm">{offerMode ? "Pick activities, stays and rides. Customers get it as a personal offer on TouristGo." : "Select items to compose a bundled suite for guests."}</p>
+                            </div>
+                        </div>
+                        <div className="grid w-full grid-cols-2 rounded-xl bg-slate-100 p-1 text-sm sm:flex sm:w-auto">
+                            <button onClick={() => setOfferMode(false)} className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${!offerMode ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}>Book now</button>
+                            <button onClick={() => setOfferMode(true)} className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-medium transition-colors ${offerMode ? "bg-orange-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-900"}`}><Gift className="h-4 w-4" />Send as trip offer</button>
+                        </div>
+                    </div>
 
                     <div className="mt-4 flex flex-wrap items-end gap-3">
-                        <div className="flex bg-slate-100 p-1 rounded-lg w-fit">
+                        <div className="grid w-full grid-cols-3 bg-slate-100 p-1 rounded-lg sm:flex sm:w-fit">
                             {[
                                 { id: "all", label: "All" },
                                 { id: "haridwar", label: "Haridwar" },
@@ -378,23 +427,25 @@ export default function CustomPackageBuilder() {
                             ))}
                         </div>
 
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs text-slate-500">Start</label>
-                            <input
-                                type="date"
-                                value={globalDates.startDate}
-                                onChange={(e) => setGlobalDates((p) => ({ ...p, startDate: e.target.value }))}
-                                className="border border-slate-200 rounded-lg px-2 py-2 text-sm bg-slate-50 outline-none"
-                            />
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs text-slate-500">End</label>
-                            <input
-                                type="date"
-                                value={globalDates.endDate}
-                                onChange={(e) => setGlobalDates((p) => ({ ...p, endDate: e.target.value }))}
-                                className="border border-slate-200 rounded-lg px-2 py-2 text-sm bg-slate-50 outline-none"
-                            />
+                        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:gap-3">
+                            <label className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                                <span className="text-xs text-slate-500">Start</span>
+                                <input
+                                    type="date"
+                                    value={globalDates.startDate}
+                                    onChange={(e) => setGlobalDates((p) => ({ ...p, startDate: e.target.value }))}
+                                    className="w-full min-w-0 border border-slate-200 rounded-lg px-2 py-2 text-sm bg-slate-50 outline-none"
+                                />
+                            </label>
+                            <label className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                                <span className="text-xs text-slate-500">End</span>
+                                <input
+                                    type="date"
+                                    value={globalDates.endDate}
+                                    onChange={(e) => setGlobalDates((p) => ({ ...p, endDate: e.target.value }))}
+                                    className="w-full min-w-0 border border-slate-200 rounded-lg px-2 py-2 text-sm bg-slate-50 outline-none"
+                                />
+                            </label>
                         </div>
 
                         {activeTab === "rentals" && (
@@ -413,12 +464,12 @@ export default function CustomPackageBuilder() {
                         )}
                     </div>
 
-                    <div className="flex bg-slate-100 p-1 mt-6 rounded-lg w-fit">
+                    <div className="mt-4 grid grid-cols-3 bg-slate-100 p-1 rounded-lg sm:mt-6 sm:flex sm:w-fit">
                         {["hotels", "rentals", "activities"].map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
-                                className={`px-5 py-2 text-sm font-medium rounded-md capitalize transition-colors ${activeTab === tab ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                                className={`px-3 py-2 sm:px-5 text-sm font-medium rounded-md capitalize transition-colors ${activeTab === tab ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
                             >
                                 {tab}
                             </button>
@@ -437,7 +488,7 @@ export default function CustomPackageBuilder() {
                     </div>
                 </div>
 
-                <div className="p-6 grid gap-4 overflow-y-auto">
+                <div className="grid gap-3 p-4 sm:gap-4 sm:p-6">
                     {loadingByType[activeTab] ? (
                         <div className="text-center text-slate-400 mt-10">Loading inventory...</div>
                     ) : (
@@ -460,14 +511,30 @@ export default function CustomPackageBuilder() {
                 </div>
             </div>
 
-            {/* Right Column: Cart & Checkout */}
-            <div className="w-[420px] lg:w-[450px] bg-white flex flex-col relative shadow-[-4px_0_24px_-10px_rgba(0,0,0,0.1)]">
-                <div className="p-6 py-2 border-b border-slate-200">
-                    <h2 className="text-lg font-semibold text-slate-900">Package Contents</h2>
-                    <p className="text-sm text-slate-500">{cart.length} items selected</p>
+            {/* Phones / tablets: bottom bar that opens the package */}
+            {!cartOpen && (
+                <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] lg:hidden">
+                    <button onClick={() => setCartOpen(true)} className={`flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-3 text-white ${offerMode ? "bg-orange-500" : "bg-slate-900"}`}>
+                        <span className="flex min-w-0 items-center gap-2.5">
+                            <ShoppingBag className="h-5 w-5 shrink-0" />
+                            <span className="truncate text-sm font-semibold">{offerMode ? "Your offer" : "Package"} · {cart.length} item{cart.length === 1 ? "" : "s"}</span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-1.5 text-sm font-bold">{inr(totals.total)} <ArrowRight className="h-4 w-4" /></span>
+                    </button>
+                </div>
+            )}
+
+            {/* Right Column: Cart & Checkout (full-screen sheet below lg) */}
+            <div className={`${cartOpen ? "fixed inset-0 z-50 flex" : "hidden"} flex-col bg-white lg:relative lg:inset-auto lg:z-auto lg:flex lg:w-[420px] lg:shrink-0 lg:shadow-[-4px_0_24px_-10px_rgba(0,0,0,0.1)] xl:w-[450px]`}>
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-6 lg:py-2">
+                    <div>
+                        <h2 className="text-lg font-semibold text-slate-900">{offerMode ? "Your offer" : "Package Contents"}</h2>
+                        <p className="text-sm text-slate-500">{cart.length} items selected</p>
+                    </div>
+                    <button onClick={() => setCartOpen(false)} className="rounded-full bg-slate-100 p-2 text-slate-500 hover:bg-slate-200 lg:hidden" aria-label="Back to items"><X className="h-4 w-4" /></button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto bg-slate-50 p-6 space-y-4">
+                <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain bg-slate-50 p-4 sm:p-6">
                     {checkoutStep === 1 ? (
                         cart.length === 0 ? (
                             <div className="text-center text-slate-400 mt-10 text-sm">Cart is empty. Select items to bundle.</div>
@@ -517,6 +584,16 @@ export default function CustomPackageBuilder() {
                                 </div>
                             ))
                         )
+                    ) : offerMode ? (
+                        <OfferComposer
+                            recipients={recipients}
+                            setRecipients={setRecipients}
+                            totals={{ ...totals, listTotal: lines.reduce((s, { m }) => s + Math.max(amt(m.listPrice ?? m.price) * m.qty * m.units, m.subtotal), 0) }}
+                            itemNames={cart.map((c) => c.name)}
+                            validate={lineProblem}
+                            buildItems={buildItems}
+                            onSent={() => { setCart([]); setCheckoutStep(1); }}
+                        />
                     ) : (
                         <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
                             <h3 className="font-semibold text-slate-900 mb-4 text-lg">Guest Details</h3>
@@ -561,7 +638,7 @@ export default function CustomPackageBuilder() {
                 </div>
 
                 {cart.length > 0 && (
-                    <div className="p-6 py-4 border-t border-slate-200 bg-white">
+                    <div className="border-t border-slate-200 bg-white px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
                         <div className="mb-4 space-y-1 text-sm">
                             {totals.discount > 0 && (
                                 <div className="flex justify-between text-slate-500"><span>Before discount</span><span className="line-through">{inr(totals.subtotal)}</span></div>
@@ -579,24 +656,24 @@ export default function CustomPackageBuilder() {
                                 onClick={() => setCheckoutStep(2)}
                                 className="w-full bg-slate-900 text-white rounded-xl py-3.5 font-semibold text-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
                             >
-                                Next Step <ArrowRight className="w-4 h-4" />
+                                {offerMode ? "Next: who gets it" : "Next Step"} <ArrowRight className="w-4 h-4" />
                             </button>
                         ) : (
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => setCheckoutStep(1)}
-                                    className="px-4 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-semibold text-sm hover:bg-slate-50 transition-colors"
+                                    className={`px-4 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-semibold text-sm hover:bg-slate-50 transition-colors ${offerMode ? "flex-1" : ""}`}
                                 >
-                                    Back
+                                    {offerMode ? "Back to items" : "Back"}
                                 </button>
-                                <button
+                                {!offerMode && <button
                                     disabled={isSubmitting}
                                     onClick={submitPackage}
                                     className="flex-1 bg-slate-900 text-white rounded-xl py-3.5 font-semibold text-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
                                 >
                                     {isSubmitting ? "Generating..." : "Generate Booking"}
                                     {!isSubmitting && <CheckCircle2 className="w-4 h-4" />}
-                                </button>
+                                </button>}
                             </div>
                         )}
                     </div>
@@ -928,7 +1005,7 @@ const MoneyFields = ({ item, quote, onChange }) => {
             </div>
             {item.itemType === "Activity" && item.priceTouched && m.listPrice != null && amt(item.price) !== m.listPrice && (
                 <button type="button" onClick={() => onChange({ price: m.listPrice, priceTouched: false })} className="text-[11px] font-medium text-slate-500 underline">
-                    Use this slot's price ₹{m.listPrice}
+                    Use this slot&apos;s price ₹{m.listPrice}
                 </button>
             )}
             <div className="rounded-lg bg-slate-50 px-3 py-2 space-y-0.5 text-xs">

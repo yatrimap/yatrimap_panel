@@ -87,15 +87,15 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5 md:col-span-2">
+      <section className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+        <div className="min-w-0 rounded-3xl border border-slate-200 bg-slate-50 p-4 sm:col-span-2 sm:rounded-[28px] sm:p-5">
           <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Agent profile</p>
-          <h3 className="mt-3 font-serif text-4xl">{data.agent.fullName}</h3>
+          <h3 className="mt-3 font-serif text-3xl sm:text-4xl">{data.agent.fullName}</h3>
           <p className="mt-2 text-sm text-slate-600">
             {data.agent.shopName} | {data.agent.city} | {data.agent.agentCode}
           </p>
           <div className="mt-4 grid gap-3 text-sm text-slate-600 md:grid-cols-2">
-            <div className="rounded-2xl bg-white p-4">
+            <div className="min-w-0 break-all rounded-2xl bg-white p-4">
               <p>{data.agent.email}</p>
               <p>{data.agent.phone}</p>
             </div>
@@ -105,18 +105,18 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
             </div>
           </div>
         </div>
-        <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 sm:rounded-[28px] sm:p-5">
           <p className="text-sm text-slate-500">Total commission</p>
-          <p className="mt-3 font-serif text-4xl">{money.format(data.summary.totalCommission)}</p>
+          <p className="mt-2 font-serif text-3xl sm:mt-3 sm:text-4xl">{money.format(data.summary.totalCommission)}</p>
         </div>
-        <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 sm:rounded-[28px] sm:p-5">
           <p className="text-sm text-slate-500">Paid out</p>
-          <p className="mt-3 font-serif text-4xl">{money.format(data.summary.totalPaid)}</p>
+          <p className="mt-2 font-serif text-3xl sm:mt-3 sm:text-4xl">{money.format(data.summary.totalPaid)}</p>
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1fr_0.7fr]">
-        <div className="rounded-[30px] border border-slate-200 bg-white p-5">
+      <section className="grid gap-4 *:min-w-0 sm:gap-6 xl:grid-cols-[1fr_0.7fr]">
+        <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 sm:rounded-[30px] sm:p-5">
           <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Agent bookings</p>
           <div className="mt-5 space-y-3">
             {data.bookings.map((booking) => (
@@ -137,7 +137,7 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
                       {booking.customer.name} | {new Date(booking.bookingDate).toLocaleDateString("en-IN")}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="md:text-right">
                     <p className="text-lg font-semibold text-slate-900">{money.format(booking.amount)}</p>
                     <p className="text-sm text-slate-500">
                       Commission {money.format(booking.commission?.commissionAmount || 0)}
@@ -150,18 +150,18 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
         </div>
 
         <div className="space-y-6">
-          <div className="rounded-[30px] border border-slate-200 bg-white p-5">
+          <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 sm:rounded-[30px] sm:p-5">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Commission trail</p>
             <div className="mt-4 space-y-3">
               {data.commissions.map((item) => (
                 <div key={item._id} className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <span>{item.serviceType}</span>
                     <span>{item.status}</span>
                   </div>
                   <p className="mt-2 text-lg font-semibold text-slate-900">{money.format(item.commissionAmount)}</p>
                   <p>{item.commissionPercentage}% on {money.format(item.totalAmount)}</p>
-                  <div className="mt-3 flex gap-2">
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       onClick={() => updateCommission(item._id, "APPROVED")}
                       className="rounded-xl bg-teal-50 px-3 py-2 text-xs font-medium text-teal-900"
@@ -186,18 +186,18 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
             </div>
           </div>
 
-          <div className="rounded-[30px] border border-slate-200 bg-white p-5">
+          <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 sm:rounded-[30px] sm:p-5">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-teal-700">Payout requests</p>
             <div className="mt-4 space-y-3">
               {data.withdrawals.map((item) => (
                 <div key={item._id} className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <span>{item.paymentMethod || "BANK"}</span>
                     <span>{item.status}</span>
                   </div>
                   <p className="mt-2 text-lg font-semibold text-slate-900">{money.format(item.amount)}</p>
                   <p>{new Date(item.createdAt).toLocaleDateString("en-IN")}</p>
-                  <div className="mt-3 flex gap-2">
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       onClick={() => updateWithdrawal(item._id, "APPROVED")}
                       className="rounded-xl bg-teal-50 px-3 py-2 text-xs font-medium text-teal-900"

@@ -55,19 +55,18 @@ export function CouponsClient() {
 
   return (
     <div className="space-y-4">
-      <form onSubmit={handleCreate} className="grid grid-cols-3 gap-2 items-end">
+      <form onSubmit={handleCreate} className="grid grid-cols-2 items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-[1fr_1fr_auto]">
         <div>
           <label className="text-xs font-bold text-slate-500">Code</label>
-          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABC123" className="w-full rounded-md p-2 border" />
+          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABC123" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm uppercase outline-none focus:border-slate-400" />
         </div>
         <div>
           <label className="text-xs font-bold text-slate-500">Amount (INR)</label>
-          <input type="number" value={amount} onChange={(e) => setAmount(Number(e.target.value))} className="w-full rounded-md p-2 border" />
+          <input type="number" value={amount} onChange={(e) => setAmount(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-slate-400" />
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-bold text-slate-500">One-time?</label>
-          <input type="checkbox" checked={isOneTime} onChange={(e) => setIsOneTime(e.target.checked)} />
-          <button className="ml-auto bg-slate-900 text-white px-3 py-2 rounded-md">Create</button>
+        <div className="col-span-2 flex items-center gap-3 sm:col-span-1">
+          <label className="flex items-center gap-2 text-xs font-bold text-slate-500"><input type="checkbox" checked={isOneTime} onChange={(e) => setIsOneTime(e.target.checked)} /> One-time</label>
+          <button className="ml-auto rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Create</button>
         </div>
       </form>
 
@@ -76,7 +75,7 @@ export function CouponsClient() {
         <div className="space-y-2">
           {loading ? <div>Loading...</div> : (
             coupons.map(c => (
-              <div key={c._id} className="p-3 rounded-md border bg-white flex justify-between items-center">
+              <div key={c._id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3.5">
                 <div>
                   <div className="font-bold">{c.code}</div>
                   <div className="text-xs text-slate-500">₹{c.amount} • {c.isOneTime ? 'One-time' : 'Permanent'}</div>
