@@ -120,7 +120,7 @@ export function CustomersClient() {
                 <Tile label="Customers" value={s ? s.customers.toLocaleString("en-IN") : "…"} hint={s ? `${s.booked} have booked` : ""} />
                 <Tile label="Revenue (all time)" value={s ? inr(s.revenue) : "…"} tone="text-teal-800" />
                 <Tile label="Explorers" value={s ? s.explorers : "…"} hint="posted a story" />
-                <Tile label="Not verified" value={s ? s.pending : "…"} hint="verify on first login" tone="text-amber-700" />
+                <Tile label="Not verified" value={s ? s.pending : "…"} hint="sign-ups without the email code" tone="text-amber-700" />
                 <Tile label="Open offers" value={s ? s.openOffers : "…"} tone="text-orange-600" />
                 <Tile label="Never booked" value={s ? s.customers - s.booked : "…"} hint="first-trip offer" tone="text-violet-700" />
             </div>
@@ -305,7 +305,7 @@ function AddCustomer({ open, onClose, onAdded }) {
                     <label className="block"><span className={label}>Mobile number</span><input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="98765 43210" inputMode="tel" className={field} /></label>
                 </div>
                 <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-500">
-                    Their TouristGo password is the last 4 digits of the mobile{digits.length === 10 ? <> (<b className="font-mono">{digits.slice(-4)}</b>)</> : ""}. The account stays <b>pending</b> until they verify their email with a code on first login.
+                    The account is <b>verified right away</b>, no code needed. Their TouristGo password is the last 4 digits of the mobile{digits.length === 10 ? <> (<b className="font-mono">{digits.slice(-4)}</b>)</> : ""}.
                 </p>
                 <button disabled={busy} className="w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">{busy ? "Adding…" : "Add customer"}</button>
             </form>

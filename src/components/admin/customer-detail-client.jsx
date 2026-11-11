@@ -70,6 +70,14 @@ export function CustomerDetailClient({ customerId }) {
         toast.success(r.message);
         load();
     };
+    const verify = async () => {
+        setBusy("verify");
+        const r = await mk("PATCH", `/customers/${c.id}`, { verified: true });
+        setBusy("");
+        if (!r.ok) { toast.error(r.message); return; }
+        toast.success(r.message);
+        load();
+    };
     const toggleMarketing = async () => {
         setBusy("optout");
         const r = await mk("PATCH", `/customers/${c.id}`, { marketingOptOut: !c.optedOut });
@@ -95,7 +103,12 @@ export function CustomerDetailClient({ customerId }) {
                                 <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xl font-bold text-slate-900 sm:text-2xl">
                                     {c.name}
                                     {c.vip && <Crown className="h-5 w-5 text-amber-500" />}
-                                    {c.verified ? <BadgeCheck className="h-5 w-5 text-teal-600" /> : <span className="rounded-lg bg-amber-50 px-2 py-0.5 text-xs font-bold uppercase text-amber-700">pending verification</span>}
+                                    {c.verified ? <BadgeCheck className="h-5 w-5 text-teal-600" /> : (
+                                        <span className="flex items-center gap-1.5">
+                                            <span className="rounded-lg bg-amber-50 px-2 py-0.5 text-xs font-bold uppercase text-amber-700">pending verification</span>
+                                            <button disabled={busy === "verify"} onClick={verify} className="flex items-center gap-1 rounded-lg bg-teal-600 px-2 py-0.5 text-xs font-bold text-white hover:bg-teal-700 disabled:opacity-50"><BadgeCheck className="h-3.5 w-3.5" />{busy === "verify" ? "Verifying…" : "Verify now"}</button>
+                                        </span>
+                                    )}
                                 </h3>
                                 <p className="mt-0.5 flex flex-wrap items-center gap-3 text-sm text-slate-500">
                                     <a href={`mailto:${c.email}`} className="flex min-w-0 items-center gap-1 break-all hover:text-slate-900"><Mail className="h-3.5 w-3.5" />{c.email}</a>
@@ -107,7 +120,8 @@ export function CustomerDetailClient({ customerId }) {
                         </div>
                         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
                             <button disabled={!c.phone} onClick={() => router.push(offerBuilderHref([c]))} className="flex items-center justify-center gap-1.5 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-40"><Gift className="h-4 w-4" /> Create trip offer</button>
-                            <button disabled={busy === "optout"} onClick={toggleMarketing} className={`flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold ${c.optedOut ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 bg-white text-slate-600"}`} title="Marketing messages (offers, reminders, explorer invite)">
+                            <Link href={`/admin/custom-package?book=${c.id}`} className="flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800" title="Book a package now with this customer's details filled in"><Package className="h-4 w-4" /> Book package</Link>
+                            <button disabled={busy === "optout"} onClick={toggleMarketing} className={`col-span-2 flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold sm:col-span-1 ${c.optedOut ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 bg-white text-slate-600"}`} title="Marketing messages (offers, reminders, explorer invite)">
                                 {c.optedOut ? <><BellOff className="h-4 w-4" /> Marketing off</> : <><Bell className="h-4 w-4" /> Marketing on</>}
                             </button>
                         </div>

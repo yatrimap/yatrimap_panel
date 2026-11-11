@@ -8,6 +8,7 @@ import { AdminMenuButton } from "@/components/admin/admin-shell";
 import { buildBackendUrl, getApiV1BaseUrl, adminAuthHeaders } from "@/lib/api-url";
 import { OfferComposer } from "@/components/admin/offer-composer";
 import { mk, recallRecipients } from "@/lib/marketing";
+import { GuestFields, guestFrom, linkedCustomer } from "@/components/admin/guest-fields";
 
 const getDeep = (obj, keys) => {
     let cur = obj;
@@ -100,6 +101,8 @@ export default function CustomPackageBuilder() {
 
     // Checkout Form State
     const [guestDetails, setGuestDetails] = useState({ name: "", email: "", phone: "", notes: "" });
+    // The existing customer the package is for (picked or matched in step 2); null = new guest.
+    const [guestCustomer, setGuestCustomer] = useState(null);
     const [advancePayment, setAdvancePayment] = useState({ mode: "upi", reference: "" });
     // Activity slots / prices / usual advance for the chosen date, per cart line.
     const [quotes, setQuotes] = useState({});
@@ -120,6 +123,17 @@ export default function CustomPackageBuilder() {
     }, [cartOpen]);
     useEffect(() => {
         const sp = new URLSearchParams(window.location.search);
+        // ?book=<customer id> (customer page → "Book package"): guest details filled in for step 2.
+        const bookFor = sp.get("book");
+        if (/^[a-f0-9]{24}$/i.test(bookFor || "")) {
+            mk("GET", `/customers/${bookFor}`).then((r) => {
+                if (!r.ok) return;
+                const c = { ...r.data.customer, bookings: r.data.customer.stats?.bookings || 0 };
+                setGuestCustomer(c);
+                setGuestDetails((g) => ({ ...g, ...guestFrom(c) }));
+                toast.success(`Booking for ${c.name}: pick items, their details are filled in`);
+            });
+        }
         if (sp.get("offer") !== "1") return;
         setOfferMode(true);
         const ids = (sp.get("to") || "").split(",").filter((x) => /^[a-f0-9]{24}$/i.test(x));
@@ -365,6 +379,7 @@ export default function CustomPackageBuilder() {
 
         const payload = {
             guestDetails,
+            customerId: linkedCustomer(guestCustomer, guestDetails)?.id || undefined,
             advancePayment,
             items: buildItems(),
             totalPrice: totals.total
@@ -380,6 +395,7 @@ export default function CustomPackageBuilder() {
                 toast.success(`Package ${res.data.package?.bookingId || ""} booked. Guests and companies are notified.`);
                 setCart([]);
                 setGuestDetails({ name: "", email: "", phone: "", notes: "" });
+                setGuestCustomer(null);
                 setAdvancePayment({ mode: "upi", reference: "" });
                 setCheckoutStep(1);
             }
@@ -595,23 +611,10 @@ export default function CustomPackageBuilder() {
                             onSent={() => { setCart([]); setCheckoutStep(1); }}
                         />
                     ) : (
-                        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm sm:p-6">
                             <h3 className="font-semibold text-slate-900 mb-4 text-lg">Guest Details</h3>
                             <div className="space-y-4">
-                                <div>
-                                    <label className="text-xs text-slate-500 font-medium mb-1 block">Full Name</label>
-                                    <input type="text" placeholder="E.g. John Doe" value={guestDetails.name} onChange={e => setGuestDetails({ ...guestDetails, name: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-slate-400 focus:bg-white transition-colors" />
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-xs text-slate-500 font-medium mb-1 block">Email</label>
-                                        <input type="email" placeholder="john@example.com" value={guestDetails.email} onChange={e => setGuestDetails({ ...guestDetails, email: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-slate-400 focus:bg-white transition-colors" />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-slate-500 font-medium mb-1 block">Phone</label>
-                                        <input type="text" placeholder="+91 9876543210" value={guestDetails.phone} onChange={e => setGuestDetails({ ...guestDetails, phone: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-slate-400 focus:bg-white transition-colors" />
-                                    </div>
-                                </div>
+                                <GuestFields value={guestDetails} onChange={setGuestDetails} picked={guestCustomer} onPick={setGuestCustomer} />
                                 {totals.advance > 0 && (
                                     <div className="rounded-lg bg-amber-50 border border-amber-100 p-3">
                                         <div className="text-xs font-semibold text-amber-800 mb-2">Advance {inr(totals.advance)} received by YatriMap</div>
@@ -653,7 +656,15 @@ export default function CustomPackageBuilder() {
 
                         {checkoutStep === 1 ? (
                             <button
-                                onClick={() => setCheckoutStep(2)}
+                                onClick={() => {
+                                    // Book now for a customer picked on the Customers page: their details are already known.
+                                    const who = recipients[0];
+                                    if (!offerMode && who && !guestDetails.name && !guestDetails.email && !guestDetails.phone) {
+                                        setGuestCustomer(who);
+                                        setGuestDetails((g) => ({ ...g, ...guestFrom(who) }));
+                                    }
+                                    setCheckoutStep(2);
+                                }}
                                 className="w-full bg-slate-900 text-white rounded-xl py-3.5 font-semibold text-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
                             >
                                 {offerMode ? "Next: who gets it" : "Next Step"} <ArrowRight className="w-4 h-4" />
