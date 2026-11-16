@@ -42,13 +42,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         checkAuth();
     }, [pathname]);
 
+    // Not logged in: remember where they were going (e.g. a WhatsApp alert's /?date=…&tab=…) for after login.
+    const toLogin = () => {
+        try { sessionStorage.setItem('ym-after-login', window.location.pathname + window.location.search); } catch { /* private mode */ }
+        router.push('/login');
+    };
+
     const checkAuth = async () => {
         try {
             const token = localStorage.getItem('admintoken');
             if (!token) {
                 setLoading(false);
                 if (pathname !== '/login') {
-                    router.push('/login');
+                    toLogin();
                 }
                 return;
             }
@@ -68,7 +74,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 localStorage.removeItem('admintoken');
                 setUser(null);
                 if (pathname !== '/login') {
-                    router.push('/login');
+                    toLogin();
                 }
             }
         } catch (error) {
@@ -76,7 +82,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             localStorage.removeItem('admintoken');
             setUser(null);
             if (pathname !== '/login') {
-                router.push('/login');
+                toLogin();
             }
         } finally {
             setLoading(false);

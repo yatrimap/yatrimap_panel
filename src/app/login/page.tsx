@@ -34,8 +34,16 @@ const Login = () => {
                 localStorage.setItem("admintoken", token);
                 setUser(userData); // Set user in context
                 toast.success("Login successful!");
-                
-                router.push('/');
+
+                // Back to the page they opened before logging in (only our own paths).
+                let next = '/';
+                try {
+                    const saved = sessionStorage.getItem('ym-after-login') || '';
+                    sessionStorage.removeItem('ym-after-login');
+                    const ownPath = saved.startsWith('/') && !saved.startsWith('//') && !saved.startsWith('/\\');
+                    if (ownPath && !saved.startsWith('/login')) next = saved;
+                } catch { /* private mode */ }
+                router.push(next);
             } else {
                 toast.error("Token not found in response.");
             }

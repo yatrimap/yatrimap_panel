@@ -76,6 +76,112 @@ const lineOf = (item, quote) => {
     return { units, qty, price, listPrice, subtotal, discount, total, advance, balance: Math.max(0, total - advance), discountTooBig: discount > subtotal, advanceTooBig: advance > total };
 };
 
+/**
+ * Whole rupees: `amount` split over `weights` by largest remainders, no part above its cap
+ * (what doesn't fit is offered to the others). Equal parts when every weight is 0.
+ * Returns { parts, left } — `left` is what fit nowhere.
+ */
+const splitWhole = (amount, weights, caps = null) => {
+    const parts = weights.map(() => 0);
+    let left = Math.max(0, Math.round(amount));
+    let open = weights.map((_, i) => i).filter((i) => !caps || caps[i] > 0);
+    while (left > 0 && open.length) {
+        const ws = open.map((i) => Math.max(0, Number(weights[i]) || 0));
+        const sum = ws.reduce((a, b) => a + b, 0);
+        const exact = ws.map((w) => (sum > 0 ? (left * w) / sum : left / open.length));
+        const floors = exact.map(Math.floor);
+        let rest = left - floors.reduce((a, b) => a + b, 0);
+        exact.map((v, k) => [v - floors[k], k]).sort((a, b) => b[0] - a[0]).forEach(([, k]) => { if (rest > 0) { floors[k] += 1; rest -= 1; } });
+        let overflow = 0;
+        const still = [];
+        open.forEach((i, k) => {
+            const room = caps ? caps[i] - parts[i] : Infinity;
+            const add = Math.min(floors[k], room);
+            parts[i] += add;
+            overflow += floors[k] - add;
+            if (!caps || parts[i] < caps[i]) still.push(i);
+        });
+        left = overflow;
+        open = still;
+    }
+    return { parts, left };
+};
+
+/**
+ * Combo requests: the price the customer agreed to and the advance they paid online, spread over
+ * the package lines the team hasn't edited by hand.
+ *   price    a part's share (set on the combo) is kept; the rest goes over the other lines by
+ *            their list value. Each line keeps its list price and the difference becomes its
+ *            discount (or the price goes up when the combo pays more than the list).
+ *   advance  over the stays and activities by their totals, never above a line's total; rentals
+ *            (scooty / bike) always ₹0, the online payment can't go to rentals.
+ * Returns { [cart id]: { price, discount, advance } } plus what couldn't be placed.
+ */
+const comboSplit = (rows, comboTotal, paid) => {
+    const manual = rows.filter((r) => r.item.comboManual);
+    const auto = rows.filter((r) => !r.item.comboManual);
+    const manualTotal = manual.reduce((s, r) => s + r.m.total, 0);
+    const manualAdvance = manual.reduce((s, r) => s + r.m.advance, 0);
+    const budget = Math.max(0, Math.round(comboTotal) - manualTotal);
+
+    const target = {};
+    const shared = auto.filter((r) => amt(r.item.comboShare) > 0);
+    const unshared = auto.filter((r) => !(amt(r.item.comboShare) > 0));
+    const sumShares = shared.reduce((s, r) => s + amt(r.item.comboShare), 0);
+    if (shared.length && unshared.length && sumShares <= budget) {
+        shared.forEach((r) => { target[r.item.id] = amt(r.item.comboShare); });
+        const { parts } = splitWhole(budget - sumShares, unshared.map((r) => r.base.subtotal));
+        unshared.forEach((r, k) => { target[r.item.id] = parts[k]; });
+    } else {
+        const { parts } = splitWhole(budget, auto.map((r) => (amt(r.item.comboShare) > 0 ? amt(r.item.comboShare) : r.base.subtotal)));
+        auto.forEach((r, k) => { target[r.item.id] = parts[k]; });
+    }
+
+    const money = {};
+    for (const r of auto) {
+        const t = target[r.item.id];
+        const n = Math.max(1, r.base.qty * r.base.units);
+        const price = r.base.price * n >= t ? r.base.price : Math.ceil(t / n);
+        money[r.item.id] = { price, discount: price * n - t, total: t, advance: 0 };
+    }
+    const payable = auto.filter((r) => r.item.itemType !== "Rental");
+    const totals = payable.map((r) => money[r.item.id].total);
+    const { parts, left } = splitWhole(Math.max(0, Math.round(paid) - manualAdvance), totals, totals);
+    payable.forEach((r, k) => { money[r.item.id].advance = parts[k]; });
+    return { money, advanceLeft: left, overPrice: manualTotal > comboTotal, overAdvance: manualAdvance > paid };
+};
+
+const PART_EMOJI = { hotel: "🏨", rental: "🛵", activity: "🚣", other: "✨" };
+
+/** A combo part the server could resolve (plan entry) as a package line, already filled in. */
+const cartItemFromPlan = (p) => {
+    const common = { id: `combo-${p.sectionId}`, sectionId: p.sectionId, comboPart: p.title, comboShare: p.share || 0, quantity: p.quantity || 1, children: 0 };
+    if (p.itemType === "Hotel") {
+        return {
+            ...common, key: `Hotel:${p.hotel.id}:${p.room.id}`, itemType: "Hotel", itemId: p.hotel.id,
+            coreItem: { _id: p.hotel.id, name: p.hotel.name }, name: `${p.hotel.name} - ${p.room.name}`,
+            hotelId: p.hotel.id, roomId: p.room.id, price: p.room.price, origPrice: p.room.price, adults: p.adults || 1,
+            checkIn: p.from, checkOut: p.to, activityDate: p.from,
+        };
+    }
+    if (p.itemType === "Rental") {
+        return {
+            ...common, key: `Rental:${p.hub.id}:${p.vehicle.id}`, itemType: "Rental", itemId: p.vehicle.id,
+            coreItem: { _id: p.vehicle.id, vehicleModelId: p.vehicle.id, hubId: { _id: p.hub.id, name: p.hub.name, address: { city: p.hub.city } }, vehicleCategory: p.vehicle.category, vehicleModalName: p.vehicle.name },
+            name: `${p.vehicle.name} (${p.hub.name})`, hubId: p.hub.id, vehicleModelId: p.vehicle.id,
+            price: p.vehicle.pricePerDay, origPrice: p.vehicle.pricePerDay, adults: 1,
+            checkIn: p.from, checkOut: p.to, activityDate: p.from,
+        };
+    }
+    return {
+        ...common, key: `Activity:${p.activity.id}:${p.variation?.id || "base"}`, itemType: "Activity", itemId: p.activity.id,
+        coreItem: { _id: p.activity.id, activityDetails: { name: p.activity.name }, companyInfo: { name: p.activity.company } },
+        name: p.variation ? `${p.activity.name} - ${p.variation.name}` : p.activity.name,
+        variationId: p.variation?.id, price: p.price || 0, origPrice: p.price || 0, adults: p.adults || 1,
+        checkIn: p.from, checkOut: p.from, activityDate: p.from,
+    };
+};
+
 export default function CustomPackageBuilder() {
     const [activeTab, setActiveTab] = useState("hotels");
     const [inventory, setInventory] = useState({ hotels: [], rentals: [], activities: [] });
@@ -121,8 +227,33 @@ export default function CustomPackageBuilder() {
         document.body.style.overflow = "hidden";
         return () => { document.body.style.overflow = prev; };
     }, [cartOpen]);
+    // Combo mode (?combo=<request id> from Combos → Requests): a customer paid a combo's advance on
+    // TouristGo. The parts linked on the combo come pre-filled (editable); the combo price and the
+    // paid advance are split over the lines automatically; confirming books it all.
+    const [comboReq, setComboReq] = useState(null);
+    // The combo part the team is adding by hand ("Find it"): the next item added becomes that part.
+    const [pendingPart, setPendingPart] = useState(null);
     useEffect(() => {
         const sp = new URLSearchParams(window.location.search);
+        const comboId = sp.get("combo");
+        if (/^[a-f0-9]{24}$/i.test(comboId || "")) {
+            mk("GET", `/combo-bookings/${comboId}`).then((r) => {
+                if (!r.ok) { toast.error(r.message); return; }
+                if (r.data.status !== "paid") { toast.error(r.data.status === "booked" ? `Already confirmed (${r.data.packageCode})` : "This combo request isn't waiting to be confirmed"); return; }
+                setComboReq(r.data);
+                setOfferMode(false);
+                setGuestDetails((g) => ({ ...g, name: r.data.guest.name, email: r.data.guest.email, phone: r.data.guest.phone }));
+                const start = new Date(r.data.startDate).toISOString().slice(0, 10);
+                const end = new Date(new Date(r.data.startDate).getTime() + Math.max(1, r.data.combo.nights || 1) * 86400000).toISOString().slice(0, 10);
+                setGlobalDates({ startDate: start, endDate: end });
+                const ready = (r.data.plan || []).filter((p) => p.ready);
+                setCart(ready.map(cartItemFromPlan));
+                const todo = (r.data.plan || []).filter((p) => p.itemType && !p.ready).length;
+                toast.success(todo
+                    ? `Combo ${r.data.code}: ${ready.length} part${ready.length === 1 ? "" : "s"} filled in, ${todo} to pick`
+                    : `Combo ${r.data.code}: everything is filled in. Check the slots, then confirm`);
+            });
+        }
         // ?book=<customer id> (customer page → "Book package"): guest details filled in for step 2.
         const bookFor = sp.get("book");
         if (/^[a-f0-9]{24}$/i.test(bookFor || "")) {
@@ -245,6 +376,8 @@ export default function CustomPackageBuilder() {
         const i = item || {};
         const s = specifics || {};
         const key = getCartKey(itemType, item, specifics);
+        const part = comboReq && pendingPart && pendingPart.itemType === itemType && delta > 0 && !cart.some((c) => c.key === key) ? pendingPart : null;
+        if (part) setPendingPart(null);
         setCart((prev) => {
             const idx = prev.findIndex((c) => c.key === key);
             if (idx === -1) {
@@ -277,6 +410,17 @@ export default function CustomPackageBuilder() {
                     children: 0,
                     ...s,
                 };
+                newItem.origPrice = newItem.price;
+                // Added for a combo part ("Find it"): it becomes that part, with its dates and price share.
+                if (part) {
+                    Object.assign(newItem, {
+                        sectionId: part.sectionId, comboPart: part.title, comboShare: part.share || 0,
+                        ...(part.from && { checkIn: part.from, activityDate: part.from }),
+                        ...(part.to && { checkOut: part.to }),
+                        ...(itemType === "Activity" && { quantity: comboReq.persons, adults: comboReq.persons }),
+                        ...(itemType === "Hotel" && { adults: comboReq.persons }),
+                    });
+                }
                 toast.success("Added to package");
                 return [...prev, newItem];
             }
@@ -314,13 +458,40 @@ export default function CustomPackageBuilder() {
             const variationId = getNestedId(c.variationId);
             if (variationId) params.set("variationId", variationId);
             axios.get(buildBackendUrl(`/admin/custom-packages/activity-quote?${params.toString()}`), { headers: adminAuthHeaders(), withCredentials: true })
-                .then((res) => setQuotes((q) => ({ ...q, [key]: { data: res.data.data } })))
+                .then((res) => {
+                    const data = res.data.data;
+                    setQuotes((q) => ({ ...q, [key]: { data } }));
+                    // A combo part with only one slot that day: picked straight away (the team can change it).
+                    if (c.comboPart && !data.closed && data.slots?.length === 1) {
+                        setCart((prev) => prev.map((x) => (x.id === c.id && !x.activityTime && quoteKey(x) === key ? { ...x, activityTime: data.slots[0].label } : x)));
+                    }
+                })
                 .catch((err) => setQuotes((q) => ({ ...q, [key]: { error: err.response?.data?.message || "Could not load slots for this date" } })));
         });
     }, [cart, quotes]);
 
     const quoteOf = (item) => quotes[quoteKey(item)]?.data || null;
-    const lines = cart.map((item) => ({ item, quote: quoteOf(item), m: lineOf(item, quoteOf(item)) }));
+    // Combo requests: lines the team hasn't edited by hand take their price, discount and advance
+    // from the combo split, so the package always adds up to the combo price and the paid advance.
+    const comboPaid = comboReq ? Math.round(comboReq.payment?.amount || 0) : 0;
+    const split = comboReq
+        ? comboSplit(cart.map((item) => ({ item, base: lineOf({ ...item, discount: 0, advance: 0 }, quoteOf(item)), m: lineOf(item, quoteOf(item)) })), comboReq.total, comboPaid)
+        : null;
+    const effective = (item) => {
+        const s = split?.money[item.id];
+        return s ? { ...item, price: s.price, discount: s.discount, advance: s.advance, priceTouched: true } : item;
+    };
+    const lines = cart.map((raw) => {
+        const item = effective(raw);
+        return { raw, item, quote: quoteOf(raw), m: lineOf(item, quoteOf(raw)) };
+    });
+    // Editing a combo line's money fixes that line (its current numbers + the change); the others re-balance.
+    const editMoney = (raw, m) => (patch) => {
+        if (comboReq && !raw.comboManual) updateItem(raw.id, { price: m.price, discount: m.discount, advance: m.advance, priceTouched: true, comboManual: true, ...patch });
+        else updateItem(raw.id, patch);
+    };
+    const autoLine = (c) => ({ ...c, comboManual: false, discount: undefined, advance: undefined, priceTouched: false, price: c.origPrice ?? c.price });
+    const resetSplit = (id) => setCart((prev) => prev.map((c) => (!id || c.id === id ? autoLine(c) : c)));
     const totals = lines.reduce(
         (acc, { m }) => ({ subtotal: acc.subtotal + m.subtotal, discount: acc.discount + m.discount, total: acc.total + m.total, advance: acc.advance + m.advance, balance: acc.balance + m.balance }),
         { subtotal: 0, discount: 0, total: 0, advance: 0, balance: 0 }
@@ -377,12 +548,28 @@ export default function CustomPackageBuilder() {
         const problem = lineProblem();
         if (problem) return toast.error(problem);
 
+        let comboPriceChanged = false;
+        if (comboReq) {
+            if (lines.some(({ item, m }) => item.itemType === "Rental" && m.advance > 0)) {
+                return toast.error("Keep the scooty's advance at ₹0: the online payment can't go to rentals. Tap “Auto split” or move it to the stay / activity");
+            }
+            if (Math.round(totals.advance) !== comboPaid) {
+                return toast.error(`The customer paid ${inr(comboPaid)} online. The advances add up to ${inr(totals.advance)}: make them total exactly ${inr(comboPaid)} (or tap “Auto split”)`);
+            }
+            if (Math.round(totals.total) !== Math.round(comboReq.total)) {
+                const ok = window.confirm(`The package adds up to ${inr(totals.total)}, but the customer agreed to ${inr(comboReq.total)} for this combo.\n\nBook it at ${inr(totals.total)}? Tell the customer about the new price.`);
+                if (!ok) return;
+                comboPriceChanged = true;
+            }
+        }
         const payload = {
             guestDetails,
             customerId: linkedCustomer(guestCustomer, guestDetails)?.id || undefined,
             advancePayment,
             items: buildItems(),
-            totalPrice: totals.total
+            totalPrice: totals.total,
+            comboBookingId: comboReq?.id || undefined,
+            ...(comboPriceChanged && { comboPriceChanged: true }),
         };
 
         try {
@@ -392,7 +579,8 @@ export default function CustomPackageBuilder() {
                 withCredentials: true
             });
             if (res.data.success) {
-                toast.success(`Package ${res.data.package?.bookingId || ""} booked. Guests and companies are notified.`);
+                toast.success(comboReq ? `Combo ${comboReq.code} confirmed as ${res.data.package?.bookingId || ""}. Guest and companies are notified.` : `Package ${res.data.package?.bookingId || ""} booked. Guests and companies are notified.`);
+                if (comboReq) { window.location.assign("/admin/combos"); return; }
                 setCart([]);
                 setGuestDetails({ name: "", email: "", phone: "", notes: "" });
                 setGuestCustomer(null);
@@ -416,14 +604,17 @@ export default function CustomPackageBuilder() {
                         <div className="flex min-w-0 items-start gap-3">
                             <AdminMenuButton />
                             <div className="min-w-0">
-                                <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{offerMode ? "Trip Offer Builder" : "Custom Package Builder"}</h1>
-                                <p className="text-[13px] text-slate-500 mt-0.5 sm:mt-1 sm:text-sm">{offerMode ? "Pick activities, stays and rides. Customers get it as a personal offer on TouristGo." : "Select items to compose a bundled suite for guests."}</p>
+                                <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{comboReq ? `Confirm combo ${comboReq.code}` : offerMode ? "Trip Offer Builder" : "Custom Package Builder"}</h1>
+                                <p className="text-[13px] text-slate-500 mt-0.5 sm:mt-1 sm:text-sm">{comboReq ? "The linked parts are already in the package. Pick anything missing, check the slots, then confirm." : offerMode ? "Pick activities, stays and rides. Customers get it as a personal offer on TouristGo." : "Select items to compose a bundled suite for guests."}</p>
                             </div>
                         </div>
-                        <div className="grid w-full grid-cols-2 rounded-xl bg-slate-100 p-1 text-sm sm:flex sm:w-auto">
-                            <button onClick={() => setOfferMode(false)} className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${!offerMode ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}>Book now</button>
-                            <button onClick={() => setOfferMode(true)} className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-medium transition-colors ${offerMode ? "bg-orange-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-900"}`}><Gift className="h-4 w-4" />Send as trip offer</button>
-                        </div>
+                        {/* A combo request is booked, never sent as a trip offer. */}
+                        {!comboReq && (
+                            <div className="grid w-full grid-cols-2 rounded-xl bg-slate-100 p-1 text-sm sm:flex sm:w-auto">
+                                <button onClick={() => setOfferMode(false)} className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${!offerMode ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}>Book now</button>
+                                <button onClick={() => setOfferMode(true)} className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-medium transition-colors ${offerMode ? "bg-orange-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-900"}`}><Gift className="h-4 w-4" />Send as trip offer</button>
+                            </div>
+                        )}
                     </div>
 
                     <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -551,17 +742,40 @@ export default function CustomPackageBuilder() {
                 </div>
 
                 <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain bg-slate-50 p-4 sm:p-6">
+                    {checkoutStep === 1 && comboReq && (
+                        <ComboPanel
+                            req={comboReq}
+                            cart={cart}
+                            totals={totals}
+                            paid={comboPaid}
+                            split={split}
+                            pendingPart={pendingPart}
+                            onFind={(p) => {
+                                setPendingPart(p);
+                                setActiveTab(p.itemType === "Hotel" ? "hotels" : p.itemType === "Rental" ? "rentals" : "activities");
+                                setSearch(p.hint || "");
+                                if (p.from) setGlobalDates({ startDate: p.from, endDate: p.to && p.to > p.from ? p.to : new Date(Date.parse(`${p.from}T00:00:00Z`) + 86400000).toISOString().slice(0, 10) });
+                                setCartOpen(false);
+                                toast.message(`Add ${p.title}: tap “Add” on the right ${p.itemType === "Hotel" ? "room" : p.itemType === "Rental" ? "scooty" : "activity"}`);
+                            }}
+                            onRestore={(p) => setCart((prev) => (prev.some((c) => c.sectionId === p.sectionId) ? prev : [...prev, cartItemFromPlan(p)]))}
+                            onReset={() => resetSplit()}
+                        />
+                    )}
                     {checkoutStep === 1 ? (
                         cart.length === 0 ? (
                             <div className="text-center text-slate-400 mt-10 text-sm">Cart is empty. Select items to bundle.</div>
                         ) : (
-                            cart.map((cartItem) => (
+                            lines.map(({ raw: cartItem, item: shown, m }) => (
                                 <div key={cartItem.id} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm relative group hover:border-slate-300 transition-colors">
                                     <button onClick={() => removeFromCart(cartItem.id)} className="absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-colors">
                                         <Trash className="w-4 h-4" />
                                     </button>
 
-                                    <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-1">{cartItem.itemType}</div>
+                                    <div className="mb-1 flex flex-wrap items-center gap-1.5 pr-6">
+                                        <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">{cartItem.itemType}</span>
+                                        {comboReq && cartItem.comboPart && <span className="truncate rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Combo · {cartItem.comboPart}</span>}
+                                    </div>
                                     <div className="font-medium text-slate-900 pr-6">{cartItem.name}</div>
 
                                     <div className="mt-4 space-y-3">
@@ -595,7 +809,12 @@ export default function CustomPackageBuilder() {
                                             </div>
                                         )}
 
-                                        <MoneyFields item={cartItem} quote={quoteOf(cartItem)} onChange={(patch) => updateItem(cartItem.id, patch)} />
+                                        <MoneyFields
+                                            item={shown}
+                                            quote={quoteOf(cartItem)}
+                                            onChange={editMoney(cartItem, m)}
+                                            combo={comboReq ? { manual: Boolean(cartItem.comboManual), onAuto: () => resetSplit(cartItem.id), lockAdvance: cartItem.itemType === "Rental" } : null}
+                                        />
                                     </div>
                                 </div>
                             ))
@@ -615,7 +834,29 @@ export default function CustomPackageBuilder() {
                             <h3 className="font-semibold text-slate-900 mb-4 text-lg">Guest Details</h3>
                             <div className="space-y-4">
                                 <GuestFields value={guestDetails} onChange={setGuestDetails} picked={guestCustomer} onPick={setGuestCustomer} />
-                                {totals.advance > 0 && (
+                                {comboReq && (() => {
+                                    const placed = Math.round(totals.advance);
+                                    const ok = comboPaid === placed;
+                                    return (
+                                        <div className={`rounded-lg border p-3 text-sm ${ok ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"}`}>
+                                            <p className="font-semibold text-slate-900">Combo {comboReq.code}: {comboReq.combo.title}</p>
+                                            <p className="mt-0.5 text-xs text-slate-600">{comboReq.persons} people · the customer agreed to {inr(comboReq.total)} in total and paid {inr(comboPaid)} online (Razorpay).</p>
+                                            <p className={`mt-1.5 text-xs font-bold ${ok ? "text-emerald-700" : "text-rose-700"}`}>
+                                                {ok ? `Advance placed: ${inr(placed)} of ${inr(comboPaid)} ✓` : `Advance placed: ${inr(placed)} of ${inr(comboPaid)}. Go back and tap “Auto split”, or set the advances so they total ${inr(comboPaid)}.`}
+                                            </p>
+                                            {Math.round(totals.total) !== Math.round(comboReq.total) && <p className="mt-1 text-xs font-semibold text-amber-700">Package total is {inr(totals.total)}, the combo price was {inr(comboReq.total)}. You&apos;ll be asked to confirm the new price.</p>}
+                                            <ul className="mt-2 space-y-0.5 border-t border-emerald-200/70 pt-2 text-xs text-slate-700">
+                                                {lines.map(({ raw, item, m }) => (
+                                                    <li key={raw.id} className="flex justify-between gap-3">
+                                                        <span className="min-w-0 truncate">{item.name}</span>
+                                                        <span className="shrink-0 font-semibold">pays {inr(m.balance)} at the {item.itemType === "Hotel" ? "hotel" : item.itemType === "Rental" ? "hub" : "company"}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    );
+                                })()}
+                                {totals.advance > 0 && !comboReq && (
                                     <div className="rounded-lg bg-amber-50 border border-amber-100 p-3">
                                         <div className="text-xs font-semibold text-amber-800 mb-2">Advance {inr(totals.advance)} received by YatriMap</div>
                                         <div className="grid grid-cols-2 gap-3">
@@ -991,8 +1232,12 @@ const ActivityFields = ({ item, quoteState, onChange }) => {
     );
 };
 
-/** Price, discount and advance for any line, with what the guest pays where. */
-const MoneyFields = ({ item, quote, onChange }) => {
+/**
+ * Price, discount and advance for any line, with what the guest pays where.
+ * `combo` (combo requests): { manual, onAuto, lockAdvance } — numbers come from the combo split
+ * until the team edits one; a rental's advance stays ₹0 (no online payment for rentals).
+ */
+const MoneyFields = ({ item, quote, onChange, combo = null }) => {
     const m = lineOf(item, quote);
     const per = item.itemType === "Hotel" ? "/ room / night" : item.itemType === "Rental" ? "/ vehicle / day" : `/ ${(quote?.unit?.label || "person").toLowerCase().replace(/s$/, "")}`;
     const field = "w-full border border-slate-200 rounded-md px-2 py-1 text-right font-semibold text-slate-900 outline-none focus:border-slate-400";
@@ -1000,6 +1245,14 @@ const MoneyFields = ({ item, quote, onChange }) => {
     const usualShare = item.itemType === "Activity" && quote ? Math.max(0, amt(m.listPrice) * m.qty - standardAdvance(item, quote)) : null;
     return (
         <div className="mt-3 pt-3 border-t border-slate-100 space-y-2 text-sm">
+            {combo && (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    {combo.manual
+                        ? <span className="font-semibold text-violet-700">Edited by hand: the other lines balance the combo</span>
+                        : <span className="font-semibold text-emerald-700">Auto: share of the combo price and the paid advance</span>}
+                    {combo.manual && <button type="button" onClick={combo.onAuto} className="rounded-md border border-slate-200 px-2 py-0.5 font-semibold text-slate-600 hover:bg-slate-50">↺ Auto split</button>}
+                </div>
+            )}
             <div className="grid grid-cols-3 gap-2">
                 <div>
                     <label className="text-[11px] text-slate-500 block mb-1">Price {per}</label>
@@ -1011,9 +1264,10 @@ const MoneyFields = ({ item, quote, onChange }) => {
                 </div>
                 <div>
                     <label className="text-[11px] text-slate-500 block mb-1">Advance (₹)</label>
-                    <input type="number" min="0" value={item.advance === undefined ? m.advance : item.advance} onChange={(e) => onChange({ advance: e.target.value })} className={`${field} ${m.advanceTooBig ? "border-red-400" : ""}`} />
+                    <input type="number" min="0" disabled={Boolean(combo?.lockAdvance)} title={combo?.lockAdvance ? "The online payment can't go to rentals" : undefined} value={item.advance === undefined ? m.advance : item.advance} onChange={(e) => onChange({ advance: e.target.value })} className={`${field} ${m.advanceTooBig ? "border-red-400" : ""} disabled:bg-slate-50 disabled:text-slate-400`} />
                 </div>
             </div>
+            {combo?.lockAdvance && <p className="text-[11px] text-slate-500">Advance stays ₹0: the customer&apos;s online payment can&apos;t go to a rental. They pay the scooty at the hub.</p>}
             {item.itemType === "Activity" && item.priceTouched && m.listPrice != null && amt(item.price) !== m.listPrice && (
                 <button type="button" onClick={() => onChange({ price: m.listPrice, priceTouched: false })} className="text-[11px] font-medium text-slate-500 underline">
                     Use this slot&apos;s price ₹{m.listPrice}
@@ -1032,6 +1286,85 @@ const MoneyFields = ({ item, quote, onChange }) => {
                     <div className="pt-1 text-[11px] text-amber-700">Company collects {inr(usualShare - m.balance)} less than its usual share ({inr(usualShare)}).</div>
                 )}
             </div>
+        </div>
+    );
+};
+
+const dayText = (key) => (key ? new Date(`${key}T00:00:00Z`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }) : "");
+
+/**
+ * Combo request summary above the package: the price the customer agreed to and paid, whether the
+ * lines add up to it, and every part of the combo: in the package, still to pick, or not booked here.
+ */
+const ComboPanel = ({ req, cart, totals, paid, split, pendingPart, onFind, onRestore, onReset }) => {
+    const priceOk = Math.round(totals.total) === Math.round(req.total);
+    const advanceOk = Math.round(totals.advance) === paid;
+    const manual = cart.some((c) => c.comboManual);
+    const start = new Date(req.startDate).toISOString().slice(0, 10);
+    const stat = (labelText, value, tone = "text-slate-900") => (
+        <div className="rounded-lg bg-white px-2 py-1.5 ring-1 ring-amber-100">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{labelText}</p>
+            <p className={`text-sm font-bold ${tone}`}>{value}</p>
+        </div>
+    );
+    return (
+        <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-sm">
+            <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Combo request {req.code}</p>
+                <p className="font-semibold text-slate-900">{req.combo.title}</p>
+                <p className="mt-0.5 text-xs text-slate-600">{req.guest.name} · {req.persons} {req.persons === 1 ? "person" : "people"} · starts {dayText(start)}</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+                {stat("Combo price", inr(req.total))}
+                {stat("Paid online", inr(paid), "text-emerald-700")}
+                {stat("To collect", inr(Math.max(0, req.total - paid)), "text-amber-700")}
+            </div>
+            <div className="space-y-1 text-xs">
+                <p className={`font-semibold ${priceOk ? "text-emerald-700" : "text-rose-700"}`}>
+                    {priceOk ? `✓ The items add up to the combo price, ${inr(req.total)}` : `The items add up to ${inr(totals.total)}; the combo price is ${inr(req.total)}`}
+                </p>
+                <p className={`font-semibold ${advanceOk ? "text-emerald-700" : "text-rose-700"}`}>
+                    {advanceOk ? `✓ The paid ${inr(paid)} is placed on the stay and activities` : `Advance placed: ${inr(totals.advance)} of the ${inr(paid)} paid`}
+                </p>
+                {split?.advanceLeft > 0 && <p className="text-rose-700">{inr(split.advanceLeft)} of the paid advance has nowhere to go. Add the stay or an activity: a rental can&apos;t take it.</p>}
+                {(split?.overPrice || split?.overAdvance) && <p className="text-rose-700">The lines you edited by hand are already more than the combo allows. Tap “Auto split”.</p>}
+                {manual && (
+                    <button type="button" onClick={onReset} className="mt-1 rounded-md border border-amber-300 bg-white px-2.5 py-1 font-semibold text-amber-800 hover:bg-amber-100">↺ Auto split everything again</button>
+                )}
+            </div>
+            <ul className="space-y-1.5 border-t border-amber-200 pt-2.5">
+                {(req.plan || []).map((p) => {
+                    const emoji = PART_EMOJI[p.kind] || "✨";
+                    if (!p.itemType) {
+                        return (
+                            <li key={p.sectionId} className="flex items-start gap-2 text-xs text-slate-500">
+                                <span>{emoji}</span><span className="min-w-0"><span className="font-semibold text-slate-700">{p.title}</span> · not booked here, give it by hand</span>
+                            </li>
+                        );
+                    }
+                    const inCart = cart.find((c) => c.sectionId === p.sectionId);
+                    if (inCart) {
+                        return (
+                            <li key={p.sectionId} className="flex items-start gap-2 text-xs text-slate-700">
+                                <span className="text-emerald-600">✓</span>
+                                <span className="min-w-0">{emoji} <span className="font-semibold">{p.title}</span> → {inCart.name}{p.day > 1 ? ` · day ${p.day}` : ""}</span>
+                            </li>
+                        );
+                    }
+                    const adding = pendingPart?.sectionId === p.sectionId;
+                    return (
+                        <li key={p.sectionId} className="flex items-start justify-between gap-2 rounded-lg bg-white px-2.5 py-2 text-xs ring-1 ring-amber-200">
+                            <span className="min-w-0">
+                                <span className="text-amber-600">⚠</span> {emoji} <span className="font-semibold text-slate-900">{p.title}</span>
+                                <span className="block text-slate-500">{p.ready ? "Removed from the package" : p.todo}{p.from ? ` · ${dayText(p.from)}` : ""}</span>
+                            </span>
+                            <button type="button" onClick={() => (p.ready ? onRestore(p) : onFind(p))} className={`shrink-0 rounded-md px-2.5 py-1 font-bold ${adding ? "bg-amber-200 text-amber-900" : "bg-amber-500 text-white hover:bg-amber-600"}`}>
+                                {p.ready ? "Add back" : adding ? "Pick it on the left" : "Find it"}
+                            </button>
+                        </li>
+                    );
+                })}
+            </ul>
         </div>
     );
 };

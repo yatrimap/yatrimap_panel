@@ -49,6 +49,17 @@ export function DashboardClient() {
   const [activeTab, setActiveTab] = useState("all");
   const [viewMode, setViewMode] = useState("booking-date"); // "booking-date" | "created-date"
 
+  // Links in the team's WhatsApp alerts open the booking's day and tab: /?date=2026-11-18&tab=activity
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const date = params.get("date");
+    const tab = params.get("tab");
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      setSelectedDate(date);
+      setMonth(date.slice(0, 7));
+    }
+    if (tab && ["all", ...bookingSections].includes(tab)) setActiveTab(tab);
+  }, []);
 
   useEffect(() => {
     let ignore = false;
