@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { CalendarDays, Users, TicketPercent, PackagePlus, Contact, Gift, Layers, Menu, X, LogOut } from "lucide-react";
+import { CalendarDays, Users, TicketPercent, PackagePlus, Contact, Gift, Layers, Bike, Menu, X, LogOut } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 const navItems = [
@@ -13,6 +13,7 @@ const navItems = [
   { href: "/admin/offers", label: "Trip Offers", icon: Gift },
   { href: "/admin/combos", label: "Combo Packages", icon: Layers },
   { href: "/admin/custom-package", label: "Custom Packages", icon: PackagePlus },
+  { href: "/admin/rental-hubs", label: "Rental Hubs", icon: Bike },
   { href: "/agents", label: "Agents", icon: Users },
   { href: "/admin/coupons", label: "Coupons", icon: TicketPercent },
 ];
